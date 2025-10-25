@@ -1,26 +1,20 @@
-import ModeCard from '@/components/modes/mode-card';
-import { modes } from '@/lib/mock-data';
-import { Button } from '@/components/ui/button';
-import { PlusCircle } from 'lucide-react';
+'use client'
+
+import { useUserCollection } from '@/lib/useUserCollection'
+import ModeCard, { Mode } from '@/components/modes/mode-card'
+import { Card } from '@/components/ui/card'
 
 export default function ModesPage() {
+  const { data: modes, loading } = useUserCollection<Mode>('modes', 'name')
+
+  if (loading) return <div className="p-4">Loading…</div>
+  if (modes.length === 0) {
+    return <Card className="p-6"><p className="text-muted-foreground">No modes yet.</p></Card>
+  }
+
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="font-headline text-3xl font-bold tracking-tight">Modes</h1>
-          <p className="text-muted-foreground">Intentionally define and activate states of being.</p>
-        </div>
-        <Button>
-          <PlusCircle className="mr-2 h-4 w-4" />
-          Add Mode
-        </Button>
-      </div>
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-        {modes.map(mode => (
-          <ModeCard key={mode.id} mode={mode} />
-        ))}
-      </div>
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {modes.map((m) => <ModeCard key={m.id} mode={m} />)}
     </div>
-  );
+  )
 }

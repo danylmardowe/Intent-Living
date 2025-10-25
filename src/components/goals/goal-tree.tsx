@@ -1,58 +1,56 @@
-import type { Goal } from '@/lib/types';
-import { lifeAreas } from '@/lib/mock-data';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { ChevronRight, Target } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
+'use client'
 
-interface GoalTreeProps {
-  goal: Goal;
-  level?: number;
+import { useMemo } from 'react'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Progress } from '@/components/ui/progress'
+
+type Goal = { id: string; title: string; parentId?: string | null; progress?: number }
+
+function buildTree(goals: Goal[]) {
+  const byId = new Map<string, Goal & { children: Goal[] }>()
+  goals.forEach(g => byId.set(g.id, { ...g, children: [] }))
+  const roots: (Goal & { children: Goal[] })[] = []
+  for (const g of byId.values()) {
+    if (g.parentId && byId.has(g.parentId)) {
+      byId.get(g.parentId)!.children.push(g)
+    } else {
+      roots.push(g)
+    }
+  }
+  return roots
 }
 
-export default function GoalTree({ goal, level = 0 }: GoalTreeProps) {
-  const lifeArea = lifeAreas.find(la => la.id === goal.lifeAreaId);
-
-  const hasChildren = goal.children && goal.children.length > 0;
-
+function GoalNode({ goal }: { goal: Goal & { children?: any[] } }) {
+  const pct = Math.max(0, Math.min(100, Math.round((goal.progress ?? 0))))
   return (
-    <Collapsible defaultOpen={level < 2}>
-      <div className="flex items-center gap-2 rounded-md hover:bg-muted/50 pr-2">
-        {hasChildren ? (
-          <CollapsibleTrigger asChild>
-            <button className="p-2">
-              <ChevronRight className="h-4 w-4 transition-transform duration-200 [&[data-state=open]]:rotate-90" />
-            </button>
-          </CollapsibleTrigger>
-        ) : (
-          <div className="w-8 p-2 flex-shrink-0">
-             <Target className="h-4 w-4 text-muted-foreground" />
-          </div>
-        )}
-        <div className="flex-grow py-2">
-            <div className="flex justify-between items-center">
-                <span className="font-medium">{goal.title}</span>
-                <span className="text-sm font-mono">{goal.progress}%</span>
-            </div>
-            <Progress value={goal.progress} className="h-2 mt-1" />
+    <Card className="mb-3">
+      <CardHeader>
+        <CardTitle className="text-base">{goal.title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center gap-3">
+          <Progress value={pct} className="h-2 w-40" />
+          <span className="text-sm text-muted-foreground">{pct}%</span>
         </div>
-        {lifeArea && (
-            <Badge variant="outline" className="ml-4 flex items-center gap-1.5 whitespace-nowrap">
-                <lifeArea.icon className="h-3 w-3" />
-                {lifeArea.name}
-            </Badge>
-        )}
-      </div>
-
-      {hasChildren && (
-        <CollapsibleContent>
-          <div className="pl-8 border-l-2 border-dashed ml-4 mt-1 space-y-1">
-            {goal.children?.map(childGoal => (
-              <GoalTree key={childGoal.id} goal={childGoal} level={level + 1} />
+        {goal.children && goal.children.length > 0 && (
+          <div className="mt-3 pl-4 border-l">
+            {goal.children.map((c) => (
+              <GoalNode key={c.id} goal={c} />
             ))}
           </div>
-        </CollapsibleContent>
-      )}
-    </Collapsible>
-  );
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+export default function GoalTree({ goals }: { goals: Goal[] }) {
+  const roots = useMemo(() => buildTree(goals), [goals])
+  return (
+    <div>
+      {roots.map((g) => (
+        <GoalNode key={g.id} goal={g as any} />
+      ))}
+    </div>
+  )
 }

@@ -42,4 +42,13 @@ next-env.d.ts
 
 # firebase
 firebase-debug.log
-firestore-debug.log
+firestore-debug.log# env
+.env*
+!.env.example
+
+# next.js
+.next/
+out/
+
+# node
+node_modules/

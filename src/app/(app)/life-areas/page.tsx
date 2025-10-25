@@ -1,26 +1,30 @@
-import LifeAreaCard from '@/components/life-areas/life-area-card';
-import { lifeAreas } from '@/lib/mock-data';
-import { Button } from '@/components/ui/button';
-import { PlusCircle } from 'lucide-react';
+'use client'
+
+import { useUserCollection } from '@/lib/useUserCollection'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Progress } from '@/components/ui/progress'
+
+type Area = { id: string; name: string; score: number } // 0..100
 
 export default function LifeAreasPage() {
+  const { data: areas, loading } = useUserCollection<Area>('lifeAreas', 'name')
+
+  if (loading) return <div className="p-4">Loading…</div>
+
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="font-headline text-3xl font-bold tracking-tight">Life Areas</h1>
-          <p className="text-muted-foreground">Segment your life into meaningful domains to define vision and track focus.</p>
-        </div>
-        <Button>
-          <PlusCircle className="mr-2 h-4 w-4" />
-          Add Life Area
-        </Button>
-      </div>
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-        {lifeAreas.map(area => (
-          <LifeAreaCard key={area.id} area={area} />
-        ))}
-      </div>
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {areas.map(a => (
+        <Card key={a.id}>
+          <CardHeader><CardTitle>{a.name}</CardTitle></CardHeader>
+          <CardContent className="flex items-center gap-3">
+            <Progress value={Math.max(0, Math.min(100, a.score || 0))} className="h-2 w-40" />
+            <span className="text-sm text-muted-foreground">{Math.round(a.score || 0)}%</span>
+          </CardContent>
+        </Card>
+      ))}
+      {areas.length === 0 && (
+        <Card className="p-6"><p className="text-muted-foreground">No life areas yet.</p></Card>
+      )}
     </div>
-  );
+  )
 }

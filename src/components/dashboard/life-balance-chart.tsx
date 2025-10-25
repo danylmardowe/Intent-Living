@@ -1,71 +1,40 @@
-'use client';
+// src/components/dashboard/life-balance-chart.tsx
+'use client'
 
-import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip } from 'recharts';
-import {
-  ChartContainer,
-  ChartTooltipContent,
-} from '@/components/ui/chart';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Progress } from '@/components/ui/progress'
+import { useUserCollection } from '@/lib/useUserCollection'
 
-const chartData = [
-  { area: 'Health', time: 5, fill: 'var(--color-chart-1)' },
-  { area: 'Career', time: 18, fill: 'var(--color-chart-2)' },
-  { area: 'Growth', time: 8, fill: 'var(--color-chart-3)' },
-  { area: 'Finance', time: 2, fill: 'var(--color-chart-4)' },
-  { area: 'Social', time: 6, fill: 'var(--color-chart-5)' },
-];
-
-const chartConfig = {
-  time: {
-    label: 'Time (hours)',
-  },
-   health: {
-    label: "Health",
-    color: "hsl(var(--chart-1))",
-  },
-  career: {
-    label: "Career",
-    color: "hsl(var(--chart-2))",
-  },
-  growth: {
-    label: "Growth",
-    color: "hsl(var(--chart-3))",
-  },
-    finance: {
-    label: "Finance",
-    color: "hsl(var(--chart-4))",
-  },
-  social: {
-    label: "Social",
-    color: "hsl(var(--chart-5))",
-  },
-};
+type Area = { id: string; name: string; score: number }
 
 export default function LifeBalanceChart() {
+  const { data: areas, loading } = useUserCollection<Area>('lifeAreas', 'name')
+
+  if (loading) return <Card className="p-6"><p>Loading…</p></Card>
+  if (areas.length === 0)
+    return (
+      <Card className="p-6">
+        <p className="text-muted-foreground">No life areas yet.</p>
+      </Card>
+    )
+
   return (
-    <ChartContainer config={chartConfig} className="min-h-[200px] w-full">
-        <ResponsiveContainer width="100%" height={350}>
-            <BarChart data={chartData} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-                <XAxis
-                dataKey="area"
-                stroke="#888888"
-                fontSize={12}
-                tickLine={false}
-                axisLine={false}
-                />
-                <YAxis
-                stroke="#888888"
-                fontSize={12}
-                tickLine={false}
-                axisLine={false}
-                tickFormatter={(value) => `${value}h`}
-                />
-                 <Tooltip
-                    cursor={false}
-                    content={<ChartTooltipContent indicator="dot" />}
-                />
-                <Bar dataKey="time" radius={[4, 4, 0, 0]} />
-            </BarChart>
-        </ResponsiveContainer>
-    </ChartContainer>
-  );
+    <Card>
+      <CardHeader>
+        <CardTitle>Life Balance</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {areas.map((a) => {
+          const v = Math.max(0, Math.min(100, a.score ?? 0))
+          return (
+            <div key={a.id} className="flex items-center gap-3">
+              <div className="w-32 text-sm">{a.name}</div>
+              <Progress value={v} className="h-2 flex-1" />
+              <div className="w-10 text-right text-sm">{Math.round(v)}%</div>
+            </div>
+          )
+        })}
+      </CardContent>
+    </Card>
+  )
 }
