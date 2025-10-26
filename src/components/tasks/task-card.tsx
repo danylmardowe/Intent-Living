@@ -1,38 +1,41 @@
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
-import type { Task } from '@/lib/types';
-import { lifeAreas } from '@/lib/mock-data';
-import { CalendarIcon } from 'lucide-react';
+'use client'
 
-interface TaskCardProps {
-  task: Task;
+import { doc, updateDoc } from 'firebase/firestore'
+import { db, auth } from '@/lib/firebase'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Button } from '@/components/ui/button'
+
+export type Task = {
+  id: string
+  title: string
+  description?: string
+  done: boolean
+  status?: 'todo' | 'in_progress' | 'done'
+  urgent?: boolean
+  important?: boolean
 }
 
-export default function TaskCard({ task }: TaskCardProps) {
-  const lifeArea = lifeAreas.find(la => la.id === task.lifeAreaId);
+export default function TaskCard({ task }: { task: Task }) {
+  async function toggleDone() {
+    const uid = auth.currentUser?.uid
+    if (!uid) return
+    await updateDoc(doc(db, 'users', uid, 'tasks', task.id), { done: !task.done })
+  }
 
   return (
-    <Card className="flex flex-col">
-      <CardHeader className="p-4">
-        <CardTitle className="text-base">{task.title}</CardTitle>
-      </CardHeader>
-      <CardContent className="flex-grow p-4 pt-0">
-        <p className="text-sm text-muted-foreground line-clamp-2">{task.description}</p>
-      </CardContent>
-      <CardFooter className="flex flex-col items-start gap-3 p-4 pt-0">
-        <div className="flex items-center text-xs text-muted-foreground">
-          <CalendarIcon className="mr-1 h-3 w-3" />
-          Due {new Date(task.dueAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <Checkbox checked={task.done} onCheckedChange={toggleDone} />
+          <CardTitle className={task.done ? 'line-through text-muted-foreground' : ''}>
+            {task.title}
+          </CardTitle>
         </div>
-        {task.progress > 0 && <Progress value={task.progress} className="h-2 w-full" />}
-        {lifeArea && (
-          <Badge variant="outline" className="flex items-center gap-1.5">
-            <lifeArea.icon className="h-3 w-3" />
-            {lifeArea.name}
-          </Badge>
-        )}
-      </CardFooter>
+        {/* example action */}
+        <Button variant="ghost" size="sm">⋯</Button>
+      </CardHeader>
+      {task.description ? <CardContent>{task.description}</CardContent> : null}
     </Card>
-  );
+  )
 }

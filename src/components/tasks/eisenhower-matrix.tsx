@@ -1,54 +1,33 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { tasks } from '@/lib/mock-data';
-import TaskCard from './task-card';
+'use client'
 
-const quadrants = {
-  do: 'Urgent & Important',
-  schedule: 'Not Urgent & Important',
-  delegate: 'Urgent & Not Important',
-  eliminate: 'Not Urgent & Not Important',
-};
+import TaskCard, { Task } from './task-card'
 
-export default function EisenhowerMatrix() {
-  const doTasks = tasks.filter(t => t.urgency >= 50 && t.importance >= 50);
-  const scheduleTasks = tasks.filter(t => t.urgency < 50 && t.importance >= 50);
-  const delegateTasks = tasks.filter(t => t.urgency >= 50 && t.importance < 50);
-  const eliminateTasks = tasks.filter(t => t.urgency < 50 && t.importance < 50);
+function quadrant(tasks: Task[], urgent: boolean, important: boolean) {
+  return tasks.filter(t => (t.urgent ?? false) === urgent && (t.important ?? false) === important)
+}
+
+export default function EisenhowerMatrix({ tasks }: { tasks: Task[] }) {
+  const q1 = quadrant(tasks, true, true)
+  const q2 = quadrant(tasks, false, true)
+  const q3 = quadrant(tasks, true, false)
+  const q4 = quadrant(tasks, false, false)
+
+  const Box = ({ title, items }: { title: string; items: Task[] }) => (
+    <div className="space-y-2">
+      <h3 className="text-sm font-medium text-muted-foreground">{title}</h3>
+      <div className="space-y-3">
+        {items.map(t => <TaskCard key={t.id} task={t} />)}
+        {items.length === 0 && <p className="text-sm text-muted-foreground">None</p>}
+      </div>
+    </div>
+  )
 
   return (
-    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-      <Card className="bg-primary/5 border-primary/20">
-        <CardHeader>
-          <CardTitle className="text-primary">{quadrants.do}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {doTasks.map(task => <TaskCard key={task.id} task={task} />)}
-        </CardContent>
-      </Card>
-      <Card className="bg-green-500/5 border-green-500/20">
-        <CardHeader>
-          <CardTitle className="text-green-600">{quadrants.schedule}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {scheduleTasks.map(task => <TaskCard key={task.id} task={task} />)}
-        </CardContent>
-      </Card>
-      <Card className="bg-yellow-500/5 border-yellow-500/20">
-        <CardHeader>
-          <CardTitle className="text-yellow-600">{quadrants.delegate}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {delegateTasks.map(task => <TaskCard key={task.id} task={task} />)}
-        </CardContent>
-      </Card>
-      <Card className="bg-red-500/5 border-red-500/20">
-        <CardHeader>
-          <CardTitle className="text-red-600">{quadrants.eliminate}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {eliminateTasks.map(task => <TaskCard key={task.id} task={task} />)}
-        </CardContent>
-      </Card>
+    <div className="grid gap-6 md:grid-cols-2">
+      <Box title="Do (Urgent & Important)" items={q1} />
+      <Box title="Plan (Not Urgent & Important)" items={q2} />
+      <Box title="Delegate (Urgent & Not Important)" items={q3} />
+      <Box title="Eliminate (Not Urgent & Not Important)" items={q4} />
     </div>
-  );
+  )
 }
