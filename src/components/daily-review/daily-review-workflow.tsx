@@ -1,7 +1,7 @@
 // src/components/daily-review/daily-review-workflow.tsx
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { auth, db } from '@/lib/firebase'
 import {
   collection,
@@ -13,6 +13,10 @@ import {
   where,
   limit,
   getDocs,
+  doc,
+  getDoc,
+  setDoc,
+  deleteDoc,
 } from 'firebase/firestore'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
@@ -20,12 +24,55 @@ import { Button } from '@/components/ui/button'
 import { useUserCollection } from '@/lib/useUserCollection'
 import { Label } from '@/components/ui/label'
 import { useActiveMode } from '@/lib/useActiveMode'
+import { Checkbox } from '@/components/ui/checkbox'
 
 type Entry = { id: string; text: string; createdAt?: any; lifeAreaId?: string; kind?: 'general'|'life-area' }
 type Area = { id: string; name: string; journalingCadence?: 'off'|'daily'|'weekly'|'monthly'|'custom' }
+type Objective = { id: string; title: string; cadence: 'daily'|'weekly'|'monthly'|'sixMonthly'; status: 'active'|'paused'|'retired' }
+
+function todayId() {
+  return new Date().toISOString().slice(0,10) // YYYY-MM-DD
+}
 
 export default function DailyReviewWorkflow() {
-  // GENERAL JOURNAL (3 prompts)
+  // ===== Objectives: Daily checklist =====
+  const { data: allObjectives } = useUserCollection<Objective>('objectives', 'title')
+  const dailyObjectives = useMemo(
+    () => allObjectives.filter(o => o.status === 'active' && o.cadence === 'daily'),
+    [allObjectives]
+  )
+  const [checked, setChecked] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    const uid = auth.currentUser?.uid
+    if (!uid || dailyObjectives.length === 0) return
+    const load = async () => {
+      const day = todayId()
+      const entries: Record<string, boolean> = {}
+      for (const o of dailyObjectives) {
+        const ref = doc(db, 'users', uid, 'objectives', o.id, 'checks', day)
+        const snap = await getDoc(ref)
+        entries[o.id] = snap.exists() && !!snap.data().done
+      }
+      setChecked(entries)
+    }
+    load()
+  }, [dailyObjectives])
+
+  async function toggleObjective(o: Objective, next: boolean) {
+    const uid = auth.currentUser?.uid
+    if (!uid) return
+    const day = todayId()
+    const ref = doc(db, 'users', uid, 'objectives', o.id, 'checks', day)
+    if (next) {
+      await setDoc(ref, { done: true, checkedAt: serverTimestamp() })
+    } else {
+      await deleteDoc(ref)
+    }
+    setChecked(s => ({ ...s, [o.id]: next }))
+  }
+
+  // ===== General journal =====
   const [p1, setP1] = useState('')
   const [p2, setP2] = useState('')
   const [p3, setP3] = useState('')
@@ -51,7 +98,7 @@ export default function DailyReviewWorkflow() {
     }
   }
 
-  // LIFE-AREA JOURNALING (active mode + cadence due)
+  // ===== Life-Area journaling (active mode + cadence due) =====
   const { data: areas } = useUserCollection<Area>('lifeAreas', 'name')
   const activeMode = useActiveMode()
   const [due, setDue] = useState<Array<{area: Area; lastAt?: Date | null; reason: 'active'|'due'}>>([])
@@ -66,14 +113,9 @@ export default function DailyReviewWorkflow() {
       const list: Array<{area: Area; lastAt?: Date | null; reason: 'active'|'due'}> = []
       const activeIds = new Set(activeMode?.activeLifeAreaIds ?? [])
 
-      // 1) Add ACTIVE areas
       for (const a of areas) {
-        if (activeIds.has(a.id)) {
-          list.push({ area: a, lastAt: null, reason: 'active' })
-        }
+        if (activeIds.has(a.id)) list.push({ area: a, lastAt: null, reason: 'active' })
       }
-
-      // 2) Add cadence-due areas (avoid duplicates)
       for (const a of areas) {
         const cad = a.journalingCadence ?? 'off'
         if (cad === 'off') continue
@@ -82,9 +124,8 @@ export default function DailyReviewWorkflow() {
         const snap = await getDocs(qref)
         const last = snap.docs[0]?.data()?.createdAt?.toDate?.() as Date | undefined
         const lastAt = last ?? null
-        if (isCadenceDue(cad, lastAt, now)) {
-          // don't double-add if already active
-          if (!activeIds.has(a.id)) list.push({ area: a, lastAt, reason: 'due' })
+        if (isCadenceDue(cad, lastAt, now) && !activeIds.has(a.id)) {
+          list.push({ area: a, lastAt, reason: 'due' })
         }
       }
       setDue(list)
@@ -114,7 +155,7 @@ export default function DailyReviewWorkflow() {
     }
   }
 
-  // RECENT FEED (optional)
+  // ===== Recent entries =====
   const [recent, setRecent] = useState<Entry[]>([])
   useEffect(() => {
     const uid = auth.currentUser?.uid
@@ -128,7 +169,24 @@ export default function DailyReviewWorkflow() {
 
   return (
     <div className="space-y-6">
-      {/* General journaling: 3 prompts */}
+      {/* Objectives checklist */}
+      <Card>
+        <CardHeader><CardTitle>Objectives (Today)</CardTitle></CardHeader>
+        <CardContent className="space-y-2">
+          {dailyObjectives.map(o => (
+            <label key={o.id} className="flex items-center justify-between gap-3 rounded-md border p-3">
+              <div className="flex items-center gap-2">
+                <Checkbox checked={!!checked[o.id]} onCheckedChange={(v)=>toggleObjective(o, !!v)} />
+                <span>{o.title}</span>
+              </div>
+              <span className="text-xs text-muted-foreground">Daily</span>
+            </label>
+          ))}
+          {dailyObjectives.length === 0 && <p className="text-sm text-muted-foreground">No daily objectives yet.</p>}
+        </CardContent>
+      </Card>
+
+      {/* General journaling */}
       <Card>
         <CardHeader><CardTitle>General Journaling</CardTitle></CardHeader>
         <CardContent className="space-y-3">
@@ -202,5 +260,5 @@ function isCadenceDue(
   if (cadence === 'daily') return days >= 1
   if (cadence === 'weekly') return days >= 7
   if (cadence === 'monthly') return days >= 28
-  return false // custom ignored for MVP
+  return false
 }
