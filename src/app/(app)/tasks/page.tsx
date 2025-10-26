@@ -4,11 +4,7 @@
 import { useMemo, useState } from 'react'
 import { auth, db } from '@/lib/firebase'
 import { useUserCollection } from '@/lib/useUserCollection'
-import {
-  collection,
-  addDoc,
-  serverTimestamp,
-} from 'firebase/firestore'
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -45,22 +41,25 @@ export default function TasksPage() {
     const uid = auth.currentUser?.uid
     if (!uid) return
     const t = title.trim()
+    const d = description.trim()
     if (!t) return
     setBusy(true)
     try {
-      await addDoc(collection(db, 'users', uid, 'tasks'), {
+      const payload: any = {
         title: t,
-        description: description.trim() || undefined,
         status: 'backlog', // backlog | scheduled | today | in_progress | blocked | done | archived
         importance,
         urgency,
         lifeAreaId: lifeAreaId === 'none' ? null : lifeAreaId,
         goalId: goalId === 'none' ? null : goalId,
-        dueAt: dueDate ? new Date(dueDate) : null,
-        startAt: startDate ? new Date(startDate) : null,
         done: false,
+        progress: 0,
         createdAt: serverTimestamp(),
-      } as any)
+        ...(d && { description: d }),
+        ...(startDate && { startAt: new Date(startDate) }),
+        ...(dueDate && { dueAt: new Date(dueDate) }),
+      }
+      await addDoc(collection(db, 'users', uid, 'tasks'), payload)
       // reset
       setTitle(''); setDescription(''); setLifeAreaId('none'); setGoalId('none')
       setDueDate(''); setStartDate(''); setImportance(50); setUrgency(40)

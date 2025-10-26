@@ -45,13 +45,16 @@ function computeProgress(
     memo.set(goalId, p)
     return p
   }
-  // auto: average of child goals progress + tasks progress
+  // auto: average of child goals progress + tasks' progress (0..100)
   const childGoalIds = g.children
   const childGoals = childGoalIds.map(id => computeProgress(id, byId, tasks, memo))
 
   const childTaskProgress = tasks
     .filter(t => t.goalId === g.id)
-    .map(t => t.done ? 100 : 0)
+    .map(t => {
+      const p = typeof t.progress === 'number' ? t.progress : (t.done ? 100 : 0)
+      return clamp(p, 0, 100)
+    })
 
   const nums = [...childGoals, ...childTaskProgress]
   const avg = nums.length === 0 ? (g.progress ?? 0) : (nums.reduce((a,c)=>a+c,0) / nums.length)

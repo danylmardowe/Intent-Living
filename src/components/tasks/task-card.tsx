@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
+import { Slider } from '@/components/ui/slider'
+import Subtasks from './subtasks'
 
 export type TaskStatus = 'backlog' | 'scheduled' | 'today' | 'in_progress' | 'blocked' | 'done' | 'archived'
 
@@ -26,6 +28,7 @@ export type Task = {
   startAt?: any
   done?: boolean
   blockedReason?: string
+  progress?: number // 0..100
 }
 
 const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
@@ -43,6 +46,7 @@ export default function TaskCard({ task }: { task: Task }) {
   const [localUrgency, setLocalUrgency] = useState(task.urgency ?? 40)
   const [localStatus, setLocalStatus] = useState<TaskStatus>(task.status ?? 'backlog')
   const [localReason, setLocalReason] = useState(task.blockedReason ?? '')
+  const [manualProgress, setManualProgress] = useState<number>(task.progress ?? (task.done ? 100 : 0))
 
   async function safeUpdate(patch: Record<string, any>) {
     const uid = auth.currentUser?.uid
@@ -51,11 +55,11 @@ export default function TaskCard({ task }: { task: Task }) {
   }
 
   async function toggleDone() {
-    await safeUpdate({ done: !task.done, status: !task.done ? 'done' : 'backlog' })
+    const nextDone = !task.done
+    await safeUpdate({ done: nextDone, status: nextDone ? 'done' : 'backlog', progress: nextDone ? 100 : manualProgress })
   }
 
   async function changeStatus(next: TaskStatus) {
-    // If blocking, require a reason (use existing if present)
     if (next === 'blocked' && !localReason.trim()) {
       const r = prompt('Reason for blocking?') || ''
       setLocalReason(r)
@@ -71,6 +75,11 @@ export default function TaskCard({ task }: { task: Task }) {
   }
   async function commitUrgency() {
     await safeUpdate({ urgency: localUrgency })
+  }
+
+  async function commitManualProgress(next: number) {
+    setManualProgress(next)
+    await safeUpdate({ progress: next, done: next >= 100, status: next >= 100 ? 'done' : localStatus })
   }
 
   async function remove() {
@@ -100,39 +109,51 @@ export default function TaskCard({ task }: { task: Task }) {
           <Button variant="ghost" size="sm" onClick={remove}>Delete</Button>
         </div>
       </CardHeader>
+
       {task.description ? (
         <CardContent className="pt-0 pb-4">
           <p className="text-sm text-muted-foreground">{task.description}</p>
         </CardContent>
       ) : null}
 
-      <CardContent className="grid gap-3 sm:grid-cols-2">
-        <div className="flex items-center gap-2">
-          <Label className="text-sm text-muted-foreground">Importance</Label>
-          <Input
-            className="h-8 w-20"
-            type="number"
-            min={0}
-            max={100}
-            value={localImportance}
-            onChange={(e)=>setLocalImportance(Number(e.target.value))}
-            onBlur={commitImportance}
-          />
+      <CardContent className="grid gap-3">
+        {/* Importance / Urgency */}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="flex items-center gap-2">
+            <Label className="text-sm text-muted-foreground">Importance</Label>
+            <Input
+              className="h-8 w-20"
+              type="number"
+              min={0}
+              max={100}
+              value={localImportance}
+              onChange={(e)=>setLocalImportance(Number(e.target.value))}
+              onBlur={commitImportance}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Label className="text-sm text-muted-foreground">Urgency</Label>
+            <Input
+              className="h-8 w-20"
+              type="number"
+              min={0}
+              max={100}
+              value={localUrgency}
+              onChange={(e)=>setLocalUrgency(Number(e.target.value))}
+              onBlur={commitUrgency}
+            />
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Label className="text-sm text-muted-foreground">Urgency</Label>
-          <Input
-            className="h-8 w-20"
-            type="number"
-            min={0}
-            max={100}
-            value={localUrgency}
-            onChange={(e)=>setLocalUrgency(Number(e.target.value))}
-            onBlur={commitUrgency}
-          />
-        </div>
+
+        {/* Subtasks (auto) OR manual progress if no subtasks */}
+        <Subtasks
+          taskId={task.id}
+          currentProgress={task.progress ?? (task.done ? 100 : 0)}
+          onManualProgressCommit={commitManualProgress}
+        />
+
         {localStatus === 'blocked' && (
-          <div className="sm:col-span-2 flex items-center gap-2">
+          <div className="flex items-center gap-2">
             <Label className="text-sm text-muted-foreground">Reason</Label>
             <Input
               className="h-8"
