@@ -19,6 +19,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { useUserCollection } from '@/lib/useUserCollection'
 import { Label } from '@/components/ui/label'
+import { useActiveMode } from '@/lib/useActiveMode'
 
 type Entry = { id: string; text: string; createdAt?: any; lifeAreaId?: string; kind?: 'general'|'life-area' }
 type Area = { id: string; name: string; journalingCadence?: 'off'|'daily'|'weekly'|'monthly'|'custom' }
@@ -50,9 +51,10 @@ export default function DailyReviewWorkflow() {
     }
   }
 
-  // LIFE-AREA JOURNALING (due-by-cadence)
+  // LIFE-AREA JOURNALING (active mode + cadence due)
   const { data: areas } = useUserCollection<Area>('lifeAreas', 'name')
-  const [due, setDue] = useState<Array<{area: Area; lastAt?: Date | null}>>([])
+  const activeMode = useActiveMode()
+  const [due, setDue] = useState<Array<{area: Area; lastAt?: Date | null; reason: 'active'|'due'}>>([])
   const [laText, setLaText] = useState<Record<string, string>>({})
   const [savingLA, setSavingLA] = useState(false)
 
@@ -61,28 +63,33 @@ export default function DailyReviewWorkflow() {
     if (!uid || areas.length === 0) return
     ;(async () => {
       const now = new Date()
-      const out: Array<{area: Area; lastAt?: Date | null}> = []
+      const list: Array<{area: Area; lastAt?: Date | null; reason: 'active'|'due'}> = []
+      const activeIds = new Set(activeMode?.activeLifeAreaIds ?? [])
+
+      // 1) Add ACTIVE areas
+      for (const a of areas) {
+        if (activeIds.has(a.id)) {
+          list.push({ area: a, lastAt: null, reason: 'active' })
+        }
+      }
+
+      // 2) Add cadence-due areas (avoid duplicates)
       for (const a of areas) {
         const cad = a.journalingCadence ?? 'off'
         if (cad === 'off') continue
-
-        // find last journal entry for this lifeArea
         const jref = collection(db, 'users', uid, 'journal')
-        const qref = query(
-          jref,
-          where('lifeAreaId', '==', a.id),
-          orderBy('createdAt', 'desc'),
-          limit(1)
-        )
+        const qref = query(jref, where('lifeAreaId', '==', a.id), orderBy('createdAt', 'desc'), limit(1))
         const snap = await getDocs(qref)
         const last = snap.docs[0]?.data()?.createdAt?.toDate?.() as Date | undefined
         const lastAt = last ?? null
-
-        if (isCadenceDue(cad, lastAt, now)) out.push({ area: a, lastAt })
+        if (isCadenceDue(cad, lastAt, now)) {
+          // don't double-add if already active
+          if (!activeIds.has(a.id)) list.push({ area: a, lastAt, reason: 'due' })
+        }
       }
-      setDue(out)
+      setDue(list)
     })()
-  }, [areas])
+  }, [areas, activeMode])
 
   async function saveLifeAreaJournals() {
     const uid = auth.currentUser?.uid
@@ -121,8 +128,6 @@ export default function DailyReviewWorkflow() {
 
   return (
     <div className="space-y-6">
-      {/* Objectives checklist would go here (future) */}
-
       {/* General journaling: 3 prompts */}
       <Card>
         <CardHeader><CardTitle>General Journaling</CardTitle></CardHeader>
@@ -134,16 +139,18 @@ export default function DailyReviewWorkflow() {
         </CardContent>
       </Card>
 
-      {/* Life-Area journaling (due by cadence) */}
+      {/* Life-Area journaling (Active + Due) */}
       {due.length > 0 && (
         <Card>
-          <CardHeader><CardTitle>Life-Area Journaling (due)</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Life-Area Journaling</CardTitle></CardHeader>
           <CardContent className="space-y-4">
-            {due.map(({ area, lastAt }) => (
+            {due.map(({ area, lastAt, reason }) => (
               <div key={area.id} className="space-y-2">
                 <Label>
                   {area.name}
-                  {lastAt ? <span className="ml-2 text-xs text-muted-foreground">(last: {lastAt.toLocaleDateString()})</span> : null}
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {reason === 'active' ? '(active)' : `(due${lastAt ? `; last ${lastAt.toLocaleDateString()}` : ''})`}
+                  </span>
                 </Label>
                 <Textarea
                   placeholder={`Reflect on ${area.name}…`}
@@ -195,5 +202,5 @@ function isCadenceDue(
   if (cadence === 'daily') return days >= 1
   if (cadence === 'weekly') return days >= 7
   if (cadence === 'monthly') return days >= 28
-  return false // 'custom' → ignore for MVP
+  return false // custom ignored for MVP
 }
