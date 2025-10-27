@@ -1,13 +1,6 @@
 {
   "indexes": [
     {
-      "collectionGroup": "modes",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "isActive", "order": "ASCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "journal",
       "queryScope": "COLLECTION",
       "fields": [
