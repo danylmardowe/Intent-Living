@@ -1,16 +1,21 @@
+// src/components/tasks/eisenhower-matrix.tsx
 'use client'
 
 import TaskCard, { Task } from './task-card'
 
 function quadrant(tasks: Task[], urgent: boolean, important: boolean) {
-  return tasks.filter(t => (t.urgent ?? false) === urgent && (t.important ?? false) === important)
+  return tasks.filter(t => {
+    const u = (t.urgency ?? 0) >= 50
+    const i = (t.importance ?? 0) >= 50
+    return u === urgent && i === important
+  })
 }
 
 export default function EisenhowerMatrix({ tasks }: { tasks: Task[] }) {
-  const q1 = quadrant(tasks, true, true)
-  const q2 = quadrant(tasks, false, true)
-  const q3 = quadrant(tasks, true, false)
-  const q4 = quadrant(tasks, false, false)
+  const q1 = quadrant(tasks, true, true)    // Do
+  const q2 = quadrant(tasks, false, true)   // Plan
+  const q3 = quadrant(tasks, true, false)   // Delegate
+  const q4 = quadrant(tasks, false, false)  // Eliminate
 
   const Box = ({ title, items }: { title: string; items: Task[] }) => (
     <div className="space-y-2">

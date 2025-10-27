@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Lock all user data to the signed-in owner
+    match /users/{uid} {
+      allow read, write: if isSignedIn() && request.auth.uid == uid;
+
+      match /{document=**} {
+        allow read, write: if isSignedIn() && request.auth.uid == uid;
+      }
+    }
+  }
+}
