@@ -4,7 +4,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { ThemeToggle } from '@/components/theme-toggle'
+import ThemeToggle from '@/components/theme-toggle' // <-- default import
 import { cn } from '@/lib/utils'
 
 export default function PageHeader() {
@@ -22,17 +22,16 @@ export default function PageHeader() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Quick actions for Reviews */}
-            <Button asChild variant={pathname.startsWith('/reviews/daily') ? 'default' : 'outline'} size="sm">
+            <Button asChild variant={pathname?.startsWith('/reviews/daily') ? 'default' : 'outline'} size="sm">
               <Link href="/reviews/daily">Daily</Link>
             </Button>
-            <Button asChild variant={pathname.startsWith('/reviews/weekly') ? 'default' : 'outline'} size="sm">
+            <Button asChild variant={pathname?.startsWith('/reviews/weekly') ? 'default' : 'outline'} size="sm">
               <Link href="/reviews/weekly">Weekly</Link>
             </Button>
-            <Button asChild variant={pathname.startsWith('/reviews/monthly') ? 'default' : 'outline'} size="sm">
+            <Button asChild variant={pathname?.startsWith('/reviews/monthly') ? 'default' : 'outline'} size="sm">
               <Link href="/reviews/monthly">Monthly</Link>
             </Button>
-            <Button asChild variant={pathname.startsWith('/reviews/six-monthly') ? 'default' : 'outline'} size="sm">
+            <Button asChild variant={pathname?.startsWith('/reviews/six-monthly') ? 'default' : 'outline'} size="sm">
               <Link href="/reviews/six-monthly">6M</Link>
             </Button>
 

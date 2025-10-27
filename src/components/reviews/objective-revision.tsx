@@ -14,8 +14,8 @@ import { Label } from '@/components/ui/label'
 type Objective = {
   id: string
   title: string
-  cadence: 'daily'|'weekly'|'monthly'|'sixMonthly'
-  status: 'active'|'paused'|'retired'
+  cadence: 'daily' | 'weekly' | 'monthly' | 'sixMonthly'
+  status: 'active' | 'paused' | 'retired'
 }
 
 export default function ObjectiveRevision({
@@ -32,11 +32,11 @@ export default function ObjectiveRevision({
     [objectives, cadencesToReview]
   )
 
-  const [local, setLocal] = useState<Record<string, {title: string; status: Objective['status']}>>(
+  const [local, setLocal] = useState<Record<string, { title: string; status: Objective['status'] }>>(
     () => Object.fromEntries(targets.map(o => [o.id, { title: o.title, status: o.status }]))
   )
 
-  // refresh local state if objectives list changes
+  // refresh local cache when targets change
   useMemo(() => {
     setLocal(Object.fromEntries(targets.map(o => [o.id, { title: o.title, status: o.status }])))
   }, [targets])
@@ -67,7 +67,10 @@ export default function ObjectiveRevision({
               <Input
                 defaultValue={o.title}
                 onChange={(e) =>
-                  setLocal(s => ({ ...s, [o.id]: { ...(s[o.id] ?? { title: o.title, status: o.status }), title: e.target.value } }))
+                  setLocal(s => ({
+                    ...s,
+                    [o.id]: { ...(s[o.id] ?? { title: o.title, status: o.status }), title: e.target.value },
+                  }))
                 }
               />
             </div>
@@ -76,7 +79,10 @@ export default function ObjectiveRevision({
               <Select
                 defaultValue={o.status}
                 onValueChange={(v: Objective['status']) =>
-                  setLocal(s => ({ ...s, [o.id]: { ...(s[o.id] ?? { title: o.title, status: o.status }), status: v } }))
+                  setLocal(s => ({
+                    ...s,
+                    [o.id]: { ...(s[o.id] ?? { title: o.title, status: o.status }), status: v },
+                  }))
                 }
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -89,9 +95,15 @@ export default function ObjectiveRevision({
             </div>
           </div>
         ))}
-        {targets.length === 0 && <p className="text-sm text-muted-foreground">No objectives to review.</p>}
+
+        {targets.length === 0 && (
+          <p className="text-sm text-muted-foreground">No objectives to review.</p>
+        )}
+
         <div className="pt-2">
-          <Button onClick={saveAll} variant="soft" disabled={targets.length === 0}>Save objective updates</Button>
+          <Button onClick={saveAll} variant="soft" disabled={targets.length === 0}>
+            Save objective updates
+          </Button>
         </div>
       </CardContent>
     </Card>

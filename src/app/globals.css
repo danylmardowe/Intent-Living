@@ -121,3 +121,18 @@
   min-width: 2px !important;
   max-width: 2px !important;
 }
+/* Ensure sidebar rail never grows */
+[data-sidebar-rail],
+.sidebar-rail {
+  width: 2px !important;
+  min-width: 2px !important;
+  max-width: 2px !important;
+}
+
+/* PDF capture niceties (crisper text on dark bg) */
+@media print {
+  body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
