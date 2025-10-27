@@ -1,36 +1,38 @@
-'use client';
+// src/components/page-header.tsx
+"use client"
 
-import { SidebarTrigger } from '@/components/ui/sidebar';
-import { UserNav } from '@/components/user-nav';
-import { usePathname } from 'next/navigation';
-import { useSidebar } from '@/components/ui/sidebar';
+import { usePathname } from "next/navigation"
+import { Button } from "@/components/ui/button"
+import ThemeToggle from "@/components/theme-toggle"
 
-function getTitleFromPath(path: string): string {
-  if (path === '/dashboard') return 'Dashboard';
-  const pathName = path.split('/').pop() || 'Dashboard';
-  return pathName
-    .replace(/-/g, ' ')
-    .split(' ')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
+const labels: Record<string, string> = {
+  "/dashboard": "Dashboard",
+  "/life-areas": "Life Areas",
+  "/goals": "Goals",
+  "/tasks": "Tasks",
+  "/reviews": "Reviews",
+}
+
+function titleFromPath(path: string) {
+  const clean = path.replace(/\/$/, "")
+  return labels[clean] || clean.split("/").slice(-1)[0]?.replace(/-/g, " ") || "Intent Living"
 }
 
 export default function PageHeader() {
-  const pathname = usePathname();
-  const { isMobile } = useSidebar();
-  const title = getTitleFromPath(pathname);
+  const pathname = usePathname()
+  const title = titleFromPath(pathname || "/")
 
   return (
-    <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background/80 px-4 backdrop-blur-sm sm:px-6">
-      {isMobile && <SidebarTrigger />}
-      <div className="flex-1">
-        <h1 className="font-headline text-xl font-semibold tracking-tight">
-          {title}
+    <header className="sticky top-0 z-20 mb-4 bg-background/70 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
+      <div className="mx-auto max-w-screen-2xl px-4 py-3 flex items-center justify-between">
+        <h1 className="text-2xl font-semibold leading-none">
+          <span className="text-gradient">{title}</span>
         </h1>
-      </div>
-      <div className="flex items-center gap-4">
-        <UserNav />
+        <div className="flex items-center gap-2">
+          <Button variant="gradient" size="sm">New</Button>
+          <ThemeToggle />
+        </div>
       </div>
     </header>
-  );
+  )
 }

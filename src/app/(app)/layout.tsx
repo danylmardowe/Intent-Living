@@ -8,8 +8,8 @@ import SidebarNav from '@/components/sidebar-nav'
 import {
   Sidebar,
   SidebarInset,
+  SidebarProvider,
   SidebarRail,
-  SidebarProvider, // ⬅️ add this
 } from '@/components/ui/sidebar'
 import { useAuth } from '@/context/auth-context'
 import { useEnsureUserDoc } from '@/lib/useEnsureUserDoc'
@@ -19,10 +19,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
 
-  // Create users/{uid} on first sign-in (no-op if it exists)
   useEnsureUserDoc()
 
-  // Redirect unauthenticated users to auth
   useEffect(() => {
     if (!loading && !user) {
       router.replace('/auth/sign-in?next=' + encodeURIComponent(pathname || '/dashboard'))
@@ -30,18 +28,31 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [loading, user, router, pathname])
 
   if (loading) return <div className="p-6">Loading…</div>
-  if (!user) return null // redirecting
+  if (!user) return null
 
   return (
     <SidebarProvider>
-      <Sidebar collapsible="icon" variant="inset" side="left">
-        <SidebarRail />
-        <SidebarNav />
-      </Sidebar>
-      <SidebarInset>
-        <PageHeader />
-        <div className="p-4 lg:p-6">{children}</div>
-      </SidebarInset>
+      <div className="flex min-h-screen">
+        {/* Make the sidebar sticky and make sure the rail exists (so Inset knows the width) */}
+        <Sidebar
+          collapsible="icon"
+          variant="inset"
+          side="left"
+          className="glass shadow-card sticky top-0 h-screen"
+        >
+          {/* Force the rail to a slim gradient line so it never overlaps content */}
+          <SidebarRail
+            className="w-[2px] min-w-[2px] max-w-[2px] bg-brand-gradient"
+            data-sidebar-rail
+          />
+          <SidebarNav />
+        </Sidebar>
+
+        <SidebarInset className="flex-1 min-h-screen">
+          <PageHeader />
+          <div className="p-4 lg:p-6">{children}</div>
+        </SidebarInset>
+      </div>
     </SidebarProvider>
   )
 }

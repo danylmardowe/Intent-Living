@@ -51,19 +51,21 @@ export default function GoalsPage() {
     const uid = auth.currentUser?.uid
     if (!uid) return
     const t = title.trim()
+    const d = description.trim()
     if (!t) return
     setBusy(true)
     try {
-      await addDoc(collection(db, 'users', uid, 'goals'), {
+      const payload: any = {
         title: t,
-        description: description.trim() || undefined,
-        parentId: parentId === 'none' ? null : parentId,
-        lifeAreaId: lifeAreaId === 'none' ? null : lifeAreaId,
-        progressMethod,
-        progress: progressMethod === 'manual' ? clamp(progress, 0, 100) : undefined,
         status: 'active',
+        progressMethod,
         createdAt: serverTimestamp(),
-      })
+        ...(parentId !== 'none' && { parentId }),
+        ...(lifeAreaId !== 'none' && { lifeAreaId }),
+        ...(progressMethod === 'manual' && { progress: clamp(progress, 0, 100) }),
+        ...(d && { description: d }),
+      }
+      await addDoc(collection(db, 'users', uid, 'goals'), payload)
       setTitle(''); setDescription(''); setParentId('none'); setLifeAreaId('none')
       setProgressMethod('manual'); setProgress(0)
     } finally {

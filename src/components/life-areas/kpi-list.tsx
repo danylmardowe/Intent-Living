@@ -34,13 +34,15 @@ export default function KPIList({ areaId }: { areaId: string }) {
     e.preventDefault()
     const uid = auth.currentUser?.uid
     if (!uid || !name.trim()) return
-    await addDoc(collection(db, 'users', uid, 'lifeAreas', areaId, 'kpis'), {
+    const payload: any = {
       name: name.trim(),
-      unit: unit.trim() || undefined,
-      target: target === '' ? undefined : Number(target),
       value: 0,
       updatedAt: serverTimestamp(),
-    })
+    }
+    const u = unit.trim()
+    if (u) payload.unit = u
+    if (target !== '' && !Number.isNaN(Number(target))) payload.target = Number(target)
+    await addDoc(collection(db, 'users', uid, 'lifeAreas', areaId, 'kpis'), payload)
     setName(''); setUnit(''); setTarget('')
   }
 
@@ -53,11 +55,11 @@ export default function KPIList({ areaId }: { areaId: string }) {
     })
   }
 
-  async function setTargetValue(id: string, target: number) {
+  async function setTargetValue(id: string, next: number) {
     const uid = auth.currentUser?.uid
     if (!uid) return
     await updateDoc(doc(db, 'users', uid, 'lifeAreas', areaId, 'kpis', id), {
-      target: Number(target),
+      target: Number(next),
       updatedAt: serverTimestamp(),
     })
   }

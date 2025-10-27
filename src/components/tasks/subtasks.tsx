@@ -1,7 +1,7 @@
 // src/components/tasks/subtasks.tsx
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { auth, db } from '@/lib/firebase'
 import {
   addDoc,
@@ -23,7 +23,7 @@ import { Slider } from '@/components/ui/slider'
 type Subtask = {
   id: string
   title: string
-  weight: number // 0..100, relative, doesn't have to sum to 100 (we normalize)
+  weight: number // 0..100 (relative; we normalize)
   done: boolean
   createdAt?: any
 }
@@ -59,15 +59,21 @@ export default function Subtasks({
     if (items.length === 0) return
     const uid = auth.currentUser?.uid
     if (!uid) return
+
     const total = items.reduce((s, i) => s + (Number(i.weight) || 0), 0)
     const numerator = items.reduce((s, i) => s + ((Number(i.weight) || 0) * (i.done ? 1 : 0)), 0)
-    const progress = total > 0 ? Math.round((numerator / total) * 100) : Math.round((items.filter(i=>i.done).length / items.length) * 100)
+    const progress = total > 0
+      ? Math.round((numerator / total) * 100)
+      : Math.round((items.filter(i => i.done).length / items.length) * 100)
+
+    const nextStatus = progress >= 100 ? 'done' : 'in_progress'
+
     ;(async () => {
       await updateDoc(doc(db, 'users', uid, 'tasks', taskId), {
         progress,
         done: progress >= 100,
-        status: progress >= 100 ? 'done' : undefined,
-      } as any)
+        status: nextStatus, // never undefined
+      })
     })()
   }, [items, taskId])
 
@@ -81,13 +87,12 @@ export default function Subtasks({
     if (!t) return
     setBusy(true)
     try {
-      const payload: any = {
+      await addDoc(collection(db, 'users', uid, 'tasks', taskId, 'subtasks'), {
         title: t,
         weight: Number(weight) || 0,
         done: false,
         createdAt: serverTimestamp(),
-      }
-      await addDoc(collection(db, 'users', uid, 'tasks', taskId, 'subtasks'), payload)
+      })
       setTitle('')
       setWeight(50)
     } finally {
@@ -154,9 +159,16 @@ export default function Subtasks({
         <Label className="text-sm text-muted-foreground">Progress</Label>
         <span className="text-sm">{Math.round(manual)}%</span>
       </div>
-      <Slider value={[manual]} min={0} max={100} step={1} onValueChange={(v)=>setManual(Math.round(v[0] ?? 0))} onValueCommit={(v)=>onManualProgressCommit(Math.round(v[0] ?? 0))} />
+      <Slider
+        value={[manual]}
+        min={0}
+        max={100}
+        step={1}
+        onValueChange={(v)=>setManual(Math.round(v[0] ?? 0))}
+        onValueCommit={(v)=>onManualProgressCommit(Math.round(v[0] ?? 0))}
+      />
       <div className="text-xs text-muted-foreground">
-        Add subtasks to switch this task to <em>automatic</em> progress (weighted by subtask weights).
+        Add subtasks to switch this task to <em>automatic</em> progress (weighted).
       </div>
 
       <form onSubmit={add} className="grid gap-2 sm:grid-cols-3 sm:items-end pt-2">
