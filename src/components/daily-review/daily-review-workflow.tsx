@@ -1,264 +1,337 @@
-// src/components/daily-review/daily-review-workflow.tsx
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { auth, db } from '@/lib/firebase'
+import * as React from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
-  collection,
   addDoc,
-  onSnapshot,
-  query,
-  orderBy,
-  serverTimestamp,
-  where,
-  limit,
-  getDocs,
+  collection,
   doc,
-  getDoc,
+  getDocs,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
   setDoc,
-  deleteDoc,
+  where,
 } from 'firebase/firestore'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { Textarea } from '@/components/ui/textarea'
+import { db } from '@/lib/firebase'
+import { useAuth } from '@/context/auth-context'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { useUserCollection } from '@/lib/useUserCollection'
-import { Label } from '@/components/ui/label'
-import { useActiveMode } from '@/lib/useActiveMode'
-import { Checkbox } from '@/components/ui/checkbox'
+import { Textarea } from '@/components/ui/textarea'
+import DailyObjectivesModal, { Objective, TriStatus } from './daily-objectives-modal'
+import GeneralJournalingModal from './general-journaling-modal'
+import { CheckCircle2, Triangle, XCircle } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 
-type Entry = { id: string; text: string; createdAt?: any; lifeAreaId?: string; kind?: 'general'|'life-area' }
-type Area = { id: string; name: string; journalingCadence?: 'off'|'daily'|'weekly'|'monthly'|'custom' }
-type Objective = { id: string; title: string; cadence: 'daily'|'weekly'|'monthly'|'sixMonthly'; status: 'active'|'paused'|'retired' }
-
-function todayId() {
-  return new Date().toISOString().slice(0,10) // YYYY-MM-DD
+type JournalEntry = {
+  id: string
+  text: string
+  lifeAreaId?: string | null
+  kind?: string
+  createdAt?: any
 }
 
-export default function DailyReviewWorkflow() {
-  // ===== Objectives: Daily checklist =====
-  const { data: allObjectives } = useUserCollection<Objective>('objectives', 'title')
-  const dailyObjectives = useMemo(
-    () => allObjectives.filter(o => o.status === 'active' && o.cadence === 'daily'),
-    [allObjectives]
-  )
-  const [checked, setChecked] = useState<Record<string, boolean>>({})
-
-  useEffect(() => {
-    const uid = auth.currentUser?.uid
-    if (!uid || dailyObjectives.length === 0) return
-    const load = async () => {
-      const day = todayId()
-      const entries: Record<string, boolean> = {}
-      for (const o of dailyObjectives) {
-        const ref = doc(db, 'users', uid, 'objectives', o.id, 'checks', day)
-        const snap = await getDoc(ref)
-        entries[o.id] = snap.exists() && !!snap.data().done
-      }
-      setChecked(entries)
-    }
-    load()
-  }, [dailyObjectives])
-
-  async function toggleObjective(o: Objective, next: boolean) {
-    const uid = auth.currentUser?.uid
-    if (!uid) return
-    const day = todayId()
-    const ref = doc(db, 'users', uid, 'objectives', o.id, 'checks', day)
-    if (next) {
-      await setDoc(ref, { done: true, checkedAt: serverTimestamp() })
-    } else {
-      await deleteDoc(ref)
-    }
-    setChecked(s => ({ ...s, [o.id]: next }))
-  }
-
-  // ===== General journal =====
-  const [p1, setP1] = useState('')
-  const [p2, setP2] = useState('')
-  const [p3, setP3] = useState('')
-  const [savingGeneral, setSavingGeneral] = useState(false)
-
-  async function saveGeneral() {
-    const uid = auth.currentUser?.uid
-    if (!uid) return
-    const toSave = [p1, p2, p3].map(t => t.trim()).filter(Boolean)
-    if (toSave.length === 0) return
-    setSavingGeneral(true)
-    try {
-      for (const text of toSave) {
-        await addDoc(collection(db, 'users', uid, 'journal'), {
-          text,
-          kind: 'general',
-          createdAt: serverTimestamp(),
-        })
-      }
-      setP1(''); setP2(''); setP3('')
-    } finally {
-      setSavingGeneral(false)
-    }
-  }
-
-  // ===== Life-Area journaling (active mode + cadence due) =====
-  const { data: areas } = useUserCollection<Area>('lifeAreas', 'name')
-  const activeMode = useActiveMode()
-  const [due, setDue] = useState<Array<{area: Area; lastAt?: Date | null; reason: 'active'|'due'}>>([])
-  const [laText, setLaText] = useState<Record<string, string>>({})
-  const [savingLA, setSavingLA] = useState(false)
-
-  useEffect(() => {
-    const uid = auth.currentUser?.uid
-    if (!uid || areas.length === 0) return
-    ;(async () => {
-      const now = new Date()
-      const list: Array<{area: Area; lastAt?: Date | null; reason: 'active'|'due'}> = []
-      const activeIds = new Set(activeMode?.activeLifeAreaIds ?? [])
-
-      for (const a of areas) {
-        if (activeIds.has(a.id)) list.push({ area: a, lastAt: null, reason: 'active' })
-      }
-      for (const a of areas) {
-        const cad = a.journalingCadence ?? 'off'
-        if (cad === 'off') continue
-        const jref = collection(db, 'users', uid, 'journal')
-        const qref = query(jref, where('lifeAreaId', '==', a.id), orderBy('createdAt', 'desc'), limit(1))
-        const snap = await getDocs(qref)
-        const last = snap.docs[0]?.data()?.createdAt?.toDate?.() as Date | undefined
-        const lastAt = last ?? null
-        if (isCadenceDue(cad, lastAt, now) && !activeIds.has(a.id)) {
-          list.push({ area: a, lastAt, reason: 'due' })
-        }
-      }
-      setDue(list)
-    })()
-  }, [areas, activeMode])
-
-  async function saveLifeAreaJournals() {
-    const uid = auth.currentUser?.uid
-    if (!uid) return
-    const pairs = Object.entries(laText)
-      .map(([areaId, text]) => ({ areaId, text: text.trim() }))
-      .filter(i => i.text.length > 0)
-    if (pairs.length === 0) return
-    setSavingLA(true)
-    try {
-      for (const { areaId, text } of pairs) {
-        await addDoc(collection(db, 'users', uid, 'journal'), {
-          text,
-          lifeAreaId: areaId,
-          kind: 'life-area',
-          createdAt: serverTimestamp(),
-        })
-      }
-      setLaText({})
-    } finally {
-      setSavingLA(false)
-    }
-  }
-
-  // ===== Recent entries =====
-  const [recent, setRecent] = useState<Entry[]>([])
-  useEffect(() => {
-    const uid = auth.currentUser?.uid
-    if (!uid) return
-    const qref = query(collection(db, 'users', uid, 'journal'), orderBy('createdAt', 'desc'))
-    const unsub = onSnapshot(qref, snap => {
-      setRecent(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })))
-    })
-    return () => unsub()
-  }, [])
-
-  return (
-    <div className="space-y-6">
-      {/* Objectives checklist */}
-      <Card>
-        <CardHeader><CardTitle>Objectives (Today)</CardTitle></CardHeader>
-        <CardContent className="space-y-2">
-          {dailyObjectives.map(o => (
-            <label key={o.id} className="flex items-center justify-between gap-3 rounded-md border p-3">
-              <div className="flex items-center gap-2">
-                <Checkbox checked={!!checked[o.id]} onCheckedChange={(v)=>toggleObjective(o, !!v)} />
-                <span>{o.title}</span>
-              </div>
-              <span className="text-xs text-muted-foreground">Daily</span>
-            </label>
-          ))}
-          {dailyObjectives.length === 0 && <p className="text-sm text-muted-foreground">No daily objectives yet.</p>}
-        </CardContent>
-      </Card>
-
-      {/* General journaling */}
-      <Card>
-        <CardHeader><CardTitle>General Journaling</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
-          <LabeledTextarea label="What did you get done today?" value={p1} onChange={setP1} />
-          <LabeledTextarea label="How did today go in terms of tasks and goals?" value={p2} onChange={setP2} />
-          <LabeledTextarea label="What will you do tomorrow?" value={p3} onChange={setP3} />
-          <Button onClick={saveGeneral} disabled={savingGeneral}>Save</Button>
-        </CardContent>
-      </Card>
-
-      {/* Life-Area journaling (Active + Due) */}
-      {due.length > 0 && (
-        <Card>
-          <CardHeader><CardTitle>Life-Area Journaling</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            {due.map(({ area, lastAt, reason }) => (
-              <div key={area.id} className="space-y-2">
-                <Label>
-                  {area.name}
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    {reason === 'active' ? '(active)' : `(due${lastAt ? `; last ${lastAt.toLocaleDateString()}` : ''})`}
-                  </span>
-                </Label>
-                <Textarea
-                  placeholder={`Reflect on ${area.name}…`}
-                  value={laText[area.id] ?? ''}
-                  onChange={(e) => setLaText(s => ({ ...s, [area.id]: e.target.value }))}
-                  rows={3}
-                />
-              </div>
-            ))}
-            <Button onClick={saveLifeAreaJournals} disabled={savingLA}>Save life-area entries</Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Recent entries */}
-      <Card>
-        <CardHeader><CardTitle>Recent entries</CardTitle></CardHeader>
-        <CardContent className="space-y-2">
-          {recent.slice(0, 6).map(e => (
-            <div key={e.id} className="text-sm">
-              {e.lifeAreaId ? <span className="mr-2 px-2 py-0.5 rounded bg-muted text-muted-foreground">Area</span> : null}
-              {e.text}
-            </div>
-          ))}
-          {recent.length === 0 && <p className="text-sm text-muted-foreground">No entries yet.</p>}
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
-
-function LabeledTextarea({ label, value, onChange }: { label: string; value: string; onChange: (s: string) => void }) {
-  return (
-    <div className="space-y-2">
-      <Label>{label}</Label>
-      <Textarea value={value} onChange={e => onChange(e.target.value)} rows={3} />
-    </div>
-  )
+type LifeArea = {
+  id: string
+  name: string
+  journalingCadence?: 'off' | 'daily' | 'weekly' | 'monthly' | 'custom'
 }
 
 function isCadenceDue(
-  cadence: 'off'|'daily'|'weekly'|'monthly'|'custom',
+  cadence: 'daily' | 'weekly' | 'monthly',
   lastAt: Date | null | undefined,
-  now: Date
+  now = new Date()
 ) {
-  if (cadence === 'off') return false
   if (!lastAt) return true
-  const days = (now.getTime() - lastAt.getTime()) / (1000*60*60*24)
-  if (cadence === 'daily') return days >= 1
-  if (cadence === 'weekly') return days >= 7
-  if (cadence === 'monthly') return days >= 28
+  const diffDays = Math.floor((now.getTime() - lastAt.getTime()) / (1000 * 60 * 60 * 24))
+  if (cadence === 'daily') return diffDays >= 1
+  if (cadence === 'weekly') return diffDays >= 7
+  if (cadence === 'monthly') return diffDays >= 28
   return false
+}
+
+function dayId(d: Date = new Date()) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+export default function DailyReviewWorkflow() {
+  const { user } = useAuth()
+  const [objectivesOpen, setObjectivesOpen] = useState(false)
+  const [journalOpen, setJournalOpen] = useState(false)
+
+  // ---------------- Daily Objectives: live (same as your latest) ----------------
+  const [dailyObjectives, setDailyObjectives] = useState<Objective[]>([])
+  const [serverChecks, setServerChecks] = useState<
+    Record<string, { status: Exclude<TriStatus, null> | null; locked: boolean }>
+  >({})
+  const checkUnsubsRef = useRef<Record<string, () => void>>({})
+
+  useEffect(() => {
+    if (!user) return
+    const today = dayId()
+
+    const qObj = query(
+      collection(db, 'users', user.uid, 'objectives'),
+      where('cadence', '==', 'daily'),
+      where('status', '==', 'active')
+    )
+
+    const unsubObjectives = onSnapshot(qObj, (snap) => {
+      const objs = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Objective[]
+      setDailyObjectives(objs)
+
+      Object.values(checkUnsubsRef.current).forEach((fn) => fn && fn())
+      checkUnsubsRef.current = {}
+
+      objs.forEach((o) => {
+        const checkDocRef = doc(db, 'users', user.uid, 'objectives', o.id, 'checks', today)
+        const unsub = onSnapshot(checkDocRef, (docSnap) => {
+          const data = docSnap.data() as any
+          let status: Exclude<TriStatus, null> | null = null
+          if (data?.status === 'yes' || data?.status === 'no' || data?.status === 'partial') {
+            status = data.status
+          } else if (typeof data?.done === 'boolean') {
+            status = data.done ? 'yes' : 'no'
+          }
+          const locked = !!data?.locked
+          setServerChecks((prev) => ({ ...prev, [o.id]: { status, locked } }))
+        })
+        checkUnsubsRef.current[o.id] = unsub
+      })
+    })
+
+    return () => {
+      unsubObjectives()
+      Object.values(checkUnsubsRef.current).forEach((fn) => fn && fn())
+      checkUnsubsRef.current = {}
+    }
+  }, [user])
+
+  const [draftAnswers, setDraftAnswers] = useState<Record<string, TriStatus>>({})
+  const [draftNotes, setDraftNotes] = useState<Record<string, string>>({})
+  const [editing, setEditing] = useState(false)
+
+  function openObjectivesModal(seedFromServer: boolean) {
+    if (seedFromServer) {
+      const seeded: Record<string, TriStatus> = {}
+      dailyObjectives.forEach((o) => (seeded[o.id] = serverChecks[o.id]?.status ?? null))
+      setDraftAnswers(seeded)
+      setDraftNotes({})
+    }
+    setObjectivesOpen(true)
+  }
+
+  const allLocked =
+    dailyObjectives.length > 0 &&
+    dailyObjectives.every((o) => serverChecks[o.id]?.locked === true)
+
+  const answersSource: Record<string, TriStatus> =
+    Object.keys(draftAnswers).length > 0
+      ? draftAnswers
+      : Object.fromEntries(
+          dailyObjectives.map((o) => [o.id, serverChecks[o.id]?.status ?? null])
+        )
+
+  const yesList = dailyObjectives.filter((o) => answersSource[o.id] === 'yes')
+  const partialList = dailyObjectives.filter((o) => answersSource[o.id] === 'partial')
+  const noList = dailyObjectives.filter((o) => answersSource[o.id] === 'no')
+
+  const allAnswered =
+    dailyObjectives.length > 0 &&
+    dailyObjectives.every(
+      (o) =>
+        answersSource[o.id] === 'yes' ||
+        answersSource[o.id] === 'no' ||
+        answersSource[o.id] === 'partial'
+    )
+
+  const showSubmit = !allLocked && Object.keys(draftAnswers).length > 0 && allAnswered
+
+  async function submitObjectiveDrafts() {
+    if (!user) return
+    const today = dayId()
+    await Promise.all(
+      dailyObjectives.map(async (o) => {
+        const s = draftAnswers[o.id]
+        const done = s === 'yes'
+        const partial = s === 'partial'
+        const checkRef = doc(db, 'users', user.uid, 'objectives', o.id, 'checks', today)
+        await setDoc(
+          checkRef,
+          { status: s, done, partial, locked: true, submittedAt: serverTimestamp() },
+          { merge: true }
+        )
+        const note = (draftNotes[o.id] || '').trim()
+        if (note) {
+          await addDoc(collection(db, 'users', user.uid, 'journal'), {
+            kind: 'objective',
+            objectiveId: o.id,
+            text: note,
+            createdAt: serverTimestamp(),
+          })
+        }
+      })
+    )
+    setDraftAnswers({})
+    setDraftNotes({})
+    setEditing(false)
+  }
+
+  // ---------------- Life-area + recents (kept minimal here) ----------------
+  const [recent, setRecent] = useState<JournalEntry[]>([])
+  useEffect(() => {
+    if (!user) return
+    const unsubRecent = onSnapshot(
+      query(collection(db, 'users', user.uid, 'journal'), orderBy('createdAt', 'desc'), limit(6)),
+      (snap) => {
+        const items = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JournalEntry))
+        setRecent(items)
+      }
+    )
+    return () => unsubRecent()
+  }, [user])
+
+  const canOpenToAnswer = !allLocked || editing
+
+  return (
+    <div className="space-y-6">
+      {/* Daily Objectives card */}
+      <Card className="hover:bg-muted/50 transition-colors">
+        <div className="w-full text-left">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Daily Objectives</CardTitle>
+                <CardDescription>
+                  {dailyObjectives.length === 0 ? (
+                    'No active daily objectives.'
+                  ) : (
+                    <>
+                      <span className="font-medium">{yesList.length}</span> yes •{' '}
+                      <span className="font-medium">{partialList.length}</span> partial •{' '}
+                      <span className="font-medium">{noList.length}</span> no
+                    </>
+                  )}
+                </CardDescription>
+              </div>
+              <div className="flex gap-2">
+                {!allLocked ? (
+                  showSubmit ? (
+                    <Button size="sm" onClick={submitObjectiveDrafts} disabled={!showSubmit}>
+                      Submit
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openObjectivesModal(Object.keys(draftAnswers).length === 0)}
+                      disabled={!canOpenToAnswer}
+                    >
+                      Edit
+                    </Button>
+                  )
+                ) : !editing ? (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setEditing(true)
+                      openObjectivesModal(true)
+                    }}
+                  >
+                    Edit
+                  </Button>
+                ) : showSubmit ? (
+                  <Button size="sm" onClick={submitObjectiveDrafts}>
+                    Save changes
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="outline" onClick={() => openObjectivesModal(true)}>
+                    Edit
+                  </Button>
+                )}
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 pb-4">
+            <div className="grid gap-1.5">
+              {yesList.length > 0 && (
+                <div className="text-sm">
+                  <span className="mr-2 inline-flex items-center text-green-600 dark:text-green-500">
+                    <CheckCircle2 className="h-4 w-4 mr-1" /> Yes:
+                  </span>
+                  <span className="text-muted-foreground">
+                    {yesList.map((o) => o.title).join(', ')}
+                  </span>
+                </div>
+              )}
+              {partialList.length > 0 && (
+                <div className="text-sm">
+                  <span className="mr-2 inline-flex items-center text-amber-600 dark:text-amber-500">
+                    <Triangle className="h-4 w-4 mr-1" /> Partial:
+                  </span>
+                  <span className="text-muted-foreground">
+                    {partialList.map((o) => o.title).join(', ')}
+                  </span>
+                </div>
+              )}
+              {noList.length > 0 && (
+                <div className="text-sm">
+                  <span className="mr-2 inline-flex items-center text-red-600 dark:text-red-500">
+                    <XCircle className="h-4 w-4 mr-1" /> No:
+                  </span>
+                  <span className="text-muted-foreground">
+                    {noList.map((o) => o.title).join(', ')}
+                  </span>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </div>
+      </Card>
+
+      {/* General Journaling card */}
+      <Card className="hover:bg-muted/50 transition-colors">
+        <button type="button" onClick={() => setJournalOpen(true)} className="w-full text-left">
+          <CardHeader>
+            <CardTitle>General Journaling</CardTitle>
+            <CardDescription>
+              Click to answer 3 prompts. Entities (tasks, goals, activities) are bold + clickable with hover
+              details.
+            </CardDescription>
+          </CardHeader>
+        </button>
+      </Card>
+      <GeneralJournalingModal open={journalOpen} onOpenChange={setJournalOpen} />
+
+      {/* Recent entries */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent Entries</CardTitle>
+          <CardDescription>Latest journal notes</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {recent.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No entries yet.</div>
+          ) : (
+            recent.map((r) => (
+              <div key={r.id} className="text-sm">
+                {r.text}
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
 }

@@ -1,13 +1,11 @@
-// src/app/(app)/reviews/page.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
 import { auth, db } from '@/lib/firebase'
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import Link from 'next/link'
 
-type Report = { id: string; dayId: string; downloadURL?: string; createdAt?: any }
+type Report = { id: string; dayId: string; downloadURL?: string; status?: string; error?: string }
 
 export default function ReviewsIndexPage() {
   const [daily, setDaily] = useState<Report[]>([])
@@ -20,7 +18,10 @@ export default function ReviewsIndexPage() {
     if (!uid) return
 
     const wire = (cadence: string, set: (x: Report[]) => void) => {
-      const qref = query(collection(db, 'users', uid, 'reviews', cadence), orderBy('dayId', 'desc'))
+      const qref = query(
+        collection(db, 'users', uid, 'reviews', cadence, 'items'),
+        orderBy('dayId', 'desc')
+      )
       return onSnapshot(qref, (snap) => set(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))))
     }
 
@@ -49,9 +50,13 @@ function Section({ title, items }: { title: string; items: Report[] }) {
         {items.slice(0, 20).map(r => (
           <div key={r.id} className="flex items-center justify-between">
             <span className="text-sm">{r.dayId}</span>
-            {r.downloadURL
-              ? <a className="text-sm underline" href={r.downloadURL} target="_blank">Open PDF</a>
-              : <span className="text-xs text-muted-foreground">Generating…</span>}
+            {r.downloadURL ? (
+              <a className="text-sm underline" href={r.downloadURL} target="_blank">Open PDF</a>
+            ) : r.status === 'error' ? (
+              <span className="text-xs text-red-500" title={r.error}>Failed to generate</span>
+            ) : (
+              <span className="text-xs text-muted-foreground">Generating…</span>
+            )}
           </div>
         ))}
         {items.length === 0 && <p className="text-sm text-muted-foreground">No reports yet.</p>}
