@@ -1,65 +1,90 @@
-// src/components/page-header.tsx
 'use client'
 
+import * as React from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import ThemeToggle from '@/components/theme-toggle' // <-- default import
 import { cn } from '@/lib/utils'
+import ThemeToggle from '@/components/theme-toggle'
+import { PanelLeft } from 'lucide-react'
+import { useSidebar } from '@/components/ui/sidebar'
 
-export default function PageHeader() {
-  const pathname = usePathname()
-  const title = routeTitle(pathname)
-
-  return (
-    <header className="sticky top-0 z-30 backdrop-blur supports-[backdrop-filter]:bg-background/60 bg-background/80 border-b">
-      <div className="mx-auto max-w-screen-2xl px-4 lg:px-6">
-        <div className="flex h-14 items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl font-semibold tracking-tight bg-gradient-to-r from-pink-400 via-purple-400 to-amber-300 bg-clip-text text-transparent">
-              {title}
-            </h1>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button asChild variant={pathname?.startsWith('/reviews/daily') ? 'default' : 'outline'} size="sm">
-              <Link href="/reviews/daily">Daily</Link>
-            </Button>
-            <Button asChild variant={pathname?.startsWith('/reviews/weekly') ? 'default' : 'outline'} size="sm">
-              <Link href="/reviews/weekly">Weekly</Link>
-            </Button>
-            <Button asChild variant={pathname?.startsWith('/reviews/monthly') ? 'default' : 'outline'} size="sm">
-              <Link href="/reviews/monthly">Monthly</Link>
-            </Button>
-            <Button asChild variant={pathname?.startsWith('/reviews/six-monthly') ? 'default' : 'outline'} size="sm">
-              <Link href="/reviews/six-monthly">6M</Link>
-            </Button>
-
-            <Button asChild variant={pathname === '/reviews' ? 'default' : 'ghost'} size="sm">
-              <Link href="/reviews">Reports</Link>
-            </Button>
-
-            <ThemeToggle />
-          </div>
-        </div>
-      </div>
-    </header>
-  )
+const titleMap: Record<string, string> = {
+  '/dashboard': 'Lifeline',
+  '/objectives': 'Objectives',
+  '/tasks': 'Tasks',
+  '/goals': 'Goals',
+  '/life-areas': 'Life Areas',
+  '/modes': 'Modes',
+  '/reviews/daily': 'Daily Review',
+  '/reviews/weekly': 'Weekly Review',
+  '/reviews/monthly': 'Monthly Review',
+  '/reviews/six-monthly': 'Six-Month Review',
 }
 
-function routeTitle(path: string | null) {
-  if (!path) return 'Dashboard'
-  const map: Record<string, string> = {
-    '/dashboard': 'Dashboard',
-    '/objectives': 'Objectives',
-    '/tasks': 'Tasks',
-    '/goals': 'Goals',
-    '/life-areas': 'Life Areas',
-    '/modes': 'Modes',
-    '/reviews': 'Reviews',
-  }
-  for (const key of Object.keys(map)) {
-    if (path === key || path.startsWith(key + '/')) return map[key]
-  }
-  return 'Lifeline'
+export default function PageHeader() {
+  const pathname = usePathname() || '/'
+  const { setOpen } = useSidebar()
+  const base = Object.keys(titleMap).find((k) => pathname.startsWith(k))
+  const title = titleMap[base ?? ''] ?? 'Lifeline'
+
+  return (
+    <div className="sticky top-0 z-40 border-b bg-background/70 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="flex h-14 items-center gap-2 px-3">
+        {/* Mobile hamburger — opens the sidebar drawer on < md */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="md:hidden"
+          onClick={() => setOpen(true)}
+          aria-label="Open menu"
+        >
+          <PanelLeft className="h-5 w-5" />
+        </Button>
+
+        {/* Title */}
+        <div className="flex flex-1 items-center gap-2">
+          <h1 className="text-base font-semibold tracking-tight">{title}</h1>
+        </div>
+
+        {/* Review shortcuts */}
+        <div className={cn('hidden sm:flex items-center gap-2')}>
+          <Button
+            asChild
+            size="sm"
+            variant={pathname.startsWith('/reviews/daily') ? 'default' : 'outline'}
+          >
+            <Link href="/reviews/daily">Daily</Link>
+          </Button>
+          <Button
+            asChild
+            size="sm"
+            variant={pathname.startsWith('/reviews/weekly') ? 'default' : 'outline'}
+          >
+            <Link href="/reviews/weekly">Weekly</Link>
+          </Button>
+          <Button
+            asChild
+            size="sm"
+            variant={pathname.startsWith('/reviews/monthly') ? 'default' : 'outline'}
+          >
+            <Link href="/reviews/monthly">Monthly</Link>
+          </Button>
+          <Button
+            asChild
+            size="sm"
+            variant={pathname.startsWith('/reviews/six-monthly') ? 'default' : 'outline'}
+          >
+            <Link href="/reviews/six-monthly">6M</Link>
+          </Button>
+          <Button asChild size="sm" variant="ghost">
+            <Link href="/reviews">Reports</Link>
+          </Button>
+        </div>
+
+        {/* Theme toggle */}
+        <ThemeToggle />
+      </div>
+    </div>
+  )
 }
