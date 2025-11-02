@@ -58,6 +58,12 @@ type Task = {
   isActive?: boolean
 }
 type ActivityType = { id: string; title: string; defaultLifeAreaId?: string | null }
+type ActivityBasic = {
+  id: string
+  title: string
+  typeId?: string | null
+  lifeAreaId?: string | null
+}
 
 function toLocalInputValue(d: Date) {
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -102,35 +108,26 @@ function tokenize(
   })
 }
 
-/* join helper: "a", "a and b", "a, b and c" */
+/* join helper */
 function joinHuman(list: string[], conj: 'and'|'or') {
   if (list.length <= 1) return list[0] || ''
   if (list.length === 2) return `${list[0]} ${conj} ${list[1]}`
   return `${list.slice(0, -1).join(', ')} ${conj} ${list[list.length - 1]}`
 }
 
-/* NEW: reflection prompt builder in the exact style requested */
 function buildReflectPromptV2(goals: Goal[], tasks: Task[], justCreatedTasks: Task[]) {
   const activeGoals = goals.filter(g => g.isActive)
   const activeTasks = tasks.filter(t => t.isActive)
-
-  // fallbacks: if no active tasks, try just-created
   const taskPool = activeTasks.length > 0 ? activeTasks : justCreatedTasks
-
   const goalTitles = activeGoals.map(g => g.title).slice(0, 3)
   const taskTitles = taskPool.map(t => t.title).slice(0, 2)
 
   let part1 = 'How was your progress today?'
-  if (goalTitles.length > 0) {
-    part1 = `How was your progress towards ${joinHuman(goalTitles, 'and')}?`
-  }
+  if (goalTitles.length > 0) part1 = `How was your progress towards ${joinHuman(goalTitles, 'and')}?`
 
   let part2 = 'What went well and what got in the way?'
-  if (taskTitles.length === 1) {
-    part2 = `Did you work on ${taskTitles[0]} today, and how did it go?`
-  } else if (taskTitles.length >= 2) {
-    part2 = `Did you work on ${joinHuman(taskTitles, 'or')} today, and how did it go?`
-  }
+  if (taskTitles.length === 1) part2 = `Did you work on ${taskTitles[0]} today, and how did it go?`
+  else if (taskTitles.length >= 2) part2 = `Did you work on ${joinHuman(taskTitles, 'or')} today, and how did it go?`
 
   return `${part1} ${part2}`
 }
@@ -176,6 +173,7 @@ export default function GeneralJournalingModal({ open, onOpenChange }: { open: b
   const [goals, setGoals] = useState<Goal[]>([])
   const [tasks, setTasks] = useState<Task[]>([])
   const [activityTypes, setActivityTypes] = useState<ActivityType[]>([])
+  const [activities, setActivities] = useState<ActivityBasic[]>([])
 
   // steps: 0 Today, 1 Generate (AI), 2 Reflect, 3 Tomorrow
   const [step, setStep] = useState<0|1|2|3>(0)
@@ -184,7 +182,7 @@ export default function GeneralJournalingModal({ open, onOpenChange }: { open: b
 
   const [taskQuery, setTaskQuery] = useState(''); const [actQuery, setActQuery] = useState('')
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set())
-  const [selectedActivityTypeIds, setSelectedActivityTypeIds] = useState<Set<string>>(new Set())
+  const [selectedActivityIds, setSelectedActivityIds] = useState<Set<string>>(new Set())
 
   const [isGenerating, setIsGenerating] = useState(false)
   const [todaySuggestions, setTodaySuggestions] = useState<TodayGen[]>([])
@@ -196,12 +194,28 @@ export default function GeneralJournalingModal({ open, onOpenChange }: { open: b
     const unsubAreas = onSnapshot(collection(db,'users',user.uid,'lifeAreas'), snap=>{
       setLifeAreas(snap.docs.map(d=>({id:d.id, ...(d.data() as any)})) as LifeArea[])
     })
-    const unsubMode = onSnapshot(query(collection(db,'users',user.uid,'modes'), where('isActive','==',true), limit(1)), snap=>{
-      const ids = ((snap.docs[0]?.data()?.activeLifeAreaIds as string[])??[])
-      setActiveAreaIds(new Set(ids))
-    })
+    const unsubMode = onSnapshot(
+      query(collection(db,'users',user.uid,'modes'), where('isActive','==',true), limit(1)),
+      snap=>{
+        const ids = ((snap.docs[0]?.data()?.activeLifeAreaIds as string[])??[])
+        setActiveAreaIds(new Set(ids))
+      }
+    )
     const unsubTypes = onSnapshot(collection(db,'users',user.uid,'activityTypes'), snap=>{
       setActivityTypes(snap.docs.map(d=>({id:d.id, ...(d.data() as any)})) as ActivityType[])
+    })
+    const unsubActs = onSnapshot(collection(db,'users',user.uid,'activities'), snap=>{
+      setActivities(
+        snap.docs.map(d=>{
+          const raw = d.data() as any
+          return {
+            id: d.id,
+            title: raw.title,
+            typeId: raw.typeId ?? null,
+            lifeAreaId: raw.lifeAreaId ?? null,
+          } as ActivityBasic
+        })
+      )
     })
     ;(async ()=>{
       const gs = await getDocs(query(collection(db,'users',user.uid,'goals')))
@@ -209,7 +223,7 @@ export default function GeneralJournalingModal({ open, onOpenChange }: { open: b
       const ts = await getDocs(query(collection(db,'users',user.uid,'tasks')))
       setTasks(ts.docs.map(d=>({id:d.id, ...(d.data() as any)})) as Task[])
     })()
-    return ()=>{unsubAreas();unsubMode();unsubTypes()}
+    return ()=>{unsubAreas();unsubMode();unsubTypes();unsubActs()}
   },[user,open])
 
   const lifeAreaName = (id?:string|null)=> lifeAreas.find(la=>la.id===id)?.name
@@ -219,22 +233,26 @@ export default function GeneralJournalingModal({ open, onOpenChange }: { open: b
     ...activityTypes.map(a=>({id:a.id,title:a.title,lifeAreaName:lifeAreaName(a.defaultLifeAreaId),kind:'activityType' as const})),
   ],[tasks,goals,activityTypes,lifeAreas])
 
-  const prompt1 = 'What did you get done today?'
-
   const filteredTasks = useMemo(()=>{
     const s = taskQuery.toLowerCase().trim()
     const list = tasks.filter(t=>t.status!=='archived')
     if(!s) return list.slice(0,100)
     return list.filter(t=>t.title.toLowerCase().includes(s)||sim(t.title,s)>0.7).slice(0,100)
   },[tasks,taskQuery])
-  const filteredActivityTypes = useMemo(()=>{
-    const s = actQuery.toLowerCase().trim()
-    if(!s) return activityTypes.slice(0,100)
-    return activityTypes.filter(a=>a.title.toLowerCase().includes(s)||sim(a.title,s)>0.7).slice(0,100)
-  },[activityTypes,actQuery])
 
-  function toggleTask(id:string){ setSelectedTaskIds(prev=>{const n=new Set(prev); n.has(id)?n.delete(id):n.add(id); return n}) }
-  function toggleActivityType(id:string){ setSelectedActivityTypeIds(prev=>{const n=new Set(prev); n.has(id)?n.delete(id):n.add(id); return n}) }
+  const filteredActivities = useMemo(()=>{
+    const s = actQuery.toLowerCase().trim()
+    const list = activities
+    if(!s) return list.slice(0,100)
+    return list.filter(a=>a.title.toLowerCase().includes(s)||sim(a.title,s)>0.7).slice(0,100)
+  },[activities,actQuery])
+
+  function toggleTask(id:string){
+    setSelectedTaskIds(prev=>{const n=new Set(prev); n.has(id)?n.delete(id):n.add(id); return n})
+  }
+  function toggleActivity(id:string){
+    setSelectedActivityIds(prev=>{const n=new Set(prev); n.has(id)?n.delete(id):n.add(id); return n})
+  }
 
   /* --- AI generator call (server route) --- */
   async function generateFromP1() {
@@ -308,13 +326,49 @@ export default function GeneralJournalingModal({ open, onOpenChange }: { open: b
     return (best && best.score>0.8) ? best.id : null
   }
 
+  // ---- ensure we write typeId (and auto life area) for activities ----
+  async function ensureActivityTypeId(title: string, providedId: string | null, hintedLifeAreaId: string | null) {
+    if (!user) throw new Error('No user')
+    if (providedId) return providedId
+    const byTitle = activityTypes.find(t => t.title.toLowerCase() === title.toLowerCase())
+    if (byTitle) return byTitle.id
+    const ref = await addDoc(collection(db,'users',user.uid,'activityTypes'), {
+      title,
+      defaultLifeAreaId: hintedLifeAreaId ?? null,
+      createdAt: serverTimestamp(),
+    })
+    // IMPORTANT: do NOT optimistically push to state here (snapshot will update it),
+    // to avoid duplicate entries and duplicate <option key> warnings.
+    return ref.id
+  }
+  function defaultLifeAreaForType(typeId?: string | null) {
+    if (!typeId) return null
+    const t = activityTypes.find(t => t.id === typeId)
+    return t?.defaultLifeAreaId ?? null
+  }
+
+  // Deduped views for selects (prevents duplicate <option> keys even if backend duplicates appear)
+  const uniqueActivityTypes = useMemo(() => {
+    const m = new Map<string, ActivityType>()
+    for (const t of activityTypes) if (!m.has(t.id)) m.set(t.id, t)
+    return Array.from(m.values())
+  }, [activityTypes])
+
+  const uniqueLifeAreas = useMemo(() => {
+    const m = new Map<string, LifeArea>()
+    for (const la of lifeAreas) if (!m.has(la.id)) m.set(la.id, la)
+    return Array.from(m.values())
+  }, [lifeAreas])
+
+  // FIXED: use captured `user`
   async function addTodaySelectedAndAdvance() {
+    if (!user) return
     const toCreate = todaySuggestions.filter(s=>s.selected)
     const createdTitles: string[] = []
     await Promise.all(toCreate.map(async (s)=>{
       if (s.as==='task') {
         const t=s.task
-        await addDoc(collection(db,'users',useAuth().user!.uid,'tasks'),{
+        await addDoc(collection(db,'users',user.uid,'tasks'),{
           title: s.title,
           description: t.description||'',
           status: t.status || 'scheduled',
@@ -329,12 +383,14 @@ export default function GeneralJournalingModal({ open, onOpenChange }: { open: b
         createdTitles.push(s.title)
       } else {
         const a=s.activity
-        await addDoc(collection(db,'users',useAuth().user!.uid,'activities'),{
+        const resolvedTypeId = await ensureActivityTypeId(s.title, a.activityTypeId, a.lifeAreaId)
+        const la = (a.lifeAreaId ?? defaultLifeAreaForType(resolvedTypeId) ?? null)
+        await addDoc(collection(db,'users',user.uid,'activities'),{
           title: s.title,
-          activityTypeId: a.activityTypeId ?? null,
-          lifeAreaId: a.lifeAreaId ?? null,
-          startAt: a.startAt ? new Date(a.startAt) : serverTimestamp(),
-          durationMin: Number(a.durationMin ?? 30),
+          typeId: resolvedTypeId,
+          lifeAreaId: la,
+          startTime: a.startAt ? new Date(a.startAt) : serverTimestamp(),
+          durationMinutes: Number(a.durationMin ?? 30),
           createdAt: serverTimestamp(),
         })
       }
@@ -348,18 +404,27 @@ export default function GeneralJournalingModal({ open, onOpenChange }: { open: b
     const parts = p3.split(/[\n\.!\?]+/g).map(s=>s.trim()).filter(Boolean).slice(0,10)
     setTomorrowSuggestions(parts.map((title,i)=>({ id:`tm-${i}`, title, as:'task', lifeAreaId:firstArea, activityTypeId:null, selected:true })))
   }
+
+  // FIXED: use captured `user`
   async function createTomorrowSelected() {
+    if (!user) return
     const dueAt = new Date(); dueAt.setDate(dueAt.getDate()+1); dueAt.setHours(9,0,0,0)
     await Promise.all(tomorrowSuggestions.filter(s=>s.selected).map(async s=>{
       if (s.as==='task') {
-        await addDoc(collection(db,'users',useAuth().user!.uid,'tasks'),{
+        await addDoc(collection(db,'users',user.uid,'tasks'),{
           title: s.title, status:'scheduled', lifeAreaId: s.lifeAreaId ?? null,
           dueAt, importance:50, urgency:40, createdAt: serverTimestamp()
         })
       } else {
-        await addDoc(collection(db,'users',useAuth().user!.uid,'activities'),{
-          title: s.title, lifeAreaId: s.lifeAreaId ?? null, activityTypeId: s.activityTypeId ?? null,
-          startAt: serverTimestamp(), durationMin: 30, createdAt: serverTimestamp()
+        const resolvedTypeId = await ensureActivityTypeId(s.title, s.activityTypeId ?? null, s.lifeAreaId ?? null)
+        const la = (s.lifeAreaId ?? defaultLifeAreaForType(resolvedTypeId) ?? null)
+        await addDoc(collection(db,'users',user.uid,'activities'),{
+          title: s.title,
+          typeId: resolvedTypeId,
+          lifeAreaId: la,
+          startTime: serverTimestamp(),
+          durationMinutes: 30,
+          createdAt: serverTimestamp()
         })
       }
     }))
@@ -373,7 +438,10 @@ export default function GeneralJournalingModal({ open, onOpenChange }: { open: b
     })
     return Array.from(new Set(ids))
   }
+
+  // FIXED: use captured `user`
   async function saveJournalsAndClose() {
+    if (!user) return
     const payloads = [p1, p2, p3].map(txt=>txt.trim()).filter(Boolean).map(txt=>({
       text: txt,
       kind: 'general',
@@ -382,10 +450,10 @@ export default function GeneralJournalingModal({ open, onOpenChange }: { open: b
       matchedActivityTypeIds: matchIds(txt,'activityType'),
       createdAt: serverTimestamp(),
     }))
-    await Promise.all(payloads.map(p=> addDoc(collection(db,'users',useAuth().user!.uid,'journal'), p)))
+    await Promise.all(payloads.map(p=> addDoc(collection(db,'users',user.uid,'journal'), p)))
     onOpenChange(false)
     setStep(0); setP1(''); setP2(''); setP3('')
-    setSelectedTaskIds(new Set()); setSelectedActivityTypeIds(new Set())
+    setSelectedTaskIds(new Set()); setSelectedActivityIds(new Set())
     setTodaySuggestions([]); setTomorrowSuggestions([]); setJustCreatedTasks([])
   }
 
@@ -447,21 +515,22 @@ export default function GeneralJournalingModal({ open, onOpenChange }: { open: b
                 </CardContent>
               </Card>
 
+              {/* Real ACTIVITIES */}
               <Card>
                 <CardContent className="pt-4 space-y-2">
                   <div className="text-sm font-medium">Select any activities you did</div>
                   <Input placeholder="Search activities…" value={actQuery} onChange={(e)=>setActQuery(e.target.value)} />
                   <div className="max-h-56 overflow-auto rounded-md border">
-                    {filteredActivityTypes.length===0 ? <div className="p-3 text-sm text-muted-foreground">No activities</div> : (
+                    {filteredActivities.length===0 ? <div className="p-3 text-sm text-muted-foreground">No activities</div> : (
                       <div className="p-2 grid gap-1">
-                        {filteredActivityTypes.map(a=>{
-                          const checked=selectedActivityTypeIds.has(a.id)
+                        {filteredActivities.map(a=>{
+                          const checked=selectedActivityIds.has(a.id)
                           return (
                             <label key={a.id} className="flex items-center gap-2 rounded px-2 py-1 hover:bg-muted cursor-pointer">
-                              <input type="checkbox" className="h-4 w-4" checked={checked} onChange={()=>toggleActivityType(a.id)} />
+                              <input type="checkbox" className="h-4 w-4" checked={checked} onChange={()=>toggleActivity(a.id)} />
                               <span className="text-sm">
                                 <span className="font-medium">{a.title}</span>{' '}
-                                <span className="text-xs text-muted-foreground">{lifeAreaName(a.defaultLifeAreaId)||'Unassigned'}</span>
+                                <span className="text-xs text-muted-foreground">{lifeAreaName(a.lifeAreaId)||'Unassigned'}</span>
                               </span>
                             </label>
                           )
@@ -520,7 +589,7 @@ export default function GeneralJournalingModal({ open, onOpenChange }: { open: b
                                   <select className="w-full h-9 px-2 rounded-md border bg-background" value={s.task.lifeAreaId ?? ''}
                                           onChange={(e)=>setTodaySuggestions(prev=>prev.map(x=>x.id===s.id?{...x,task:{...x.task,lifeAreaId:e.target.value||null}}:x))}>
                                     <option value="">Unassigned</option>
-                                    {lifeAreas.map(la=><option key={la.id} value={la.id}>{la.name}</option>)}
+                                    {uniqueLifeAreas.map(la=><option key={la.id} value={la.id}>{la.name}</option>)}
                                   </select>
                                 </div>
                                 <div>
@@ -539,7 +608,7 @@ export default function GeneralJournalingModal({ open, onOpenChange }: { open: b
                                   <select className="w-full h-9 px-2 rounded-md border bg-background" value={s.activity.lifeAreaId ?? ''}
                                           onChange={(e)=>setTodaySuggestions(prev=>prev.map(x=>x.id===s.id?{...x,activity:{...x.activity,lifeAreaId:e.target.value||null}}:x))}>
                                     <option value="">Unassigned</option>
-                                    {lifeAreas.map(la=><option key={la.id} value={la.id}>{la.name}</option>)}
+                                    {uniqueLifeAreas.map(la=><option key={la.id} value={la.id}>{la.name}</option>)}
                                   </select>
                                 </div>
                                 <div>
@@ -547,7 +616,7 @@ export default function GeneralJournalingModal({ open, onOpenChange }: { open: b
                                   <select className="w-full h-9 px-2 rounded-md border bg-background" value={s.activity.activityTypeId ?? ''}
                                           onChange={(e)=>setTodaySuggestions(prev=>prev.map(x=>x.id===s.id?{...x,activity:{...x.activity,activityTypeId:e.target.value||null}}:x))}>
                                     <option value="">(none)</option>
-                                    {activityTypes.map(at=><option key={at.id} value={at.id}>{at.title}</option>)}
+                                    {uniqueActivityTypes.map(at=><option key={at.id} value={at.id}>{at.title}</option>)}
                                   </select>
                                 </div>
                               </>
@@ -625,7 +694,7 @@ export default function GeneralJournalingModal({ open, onOpenChange }: { open: b
           </div>
         )}
 
-        {/* STEP 2 — REFLECT (dynamic prompt, live updates with toggles) */}
+        {/* STEP 2 — REFLECT */}
         {step===2 && (
           <div className="space-y-4">
             <Card>
@@ -642,7 +711,8 @@ export default function GeneralJournalingModal({ open, onOpenChange }: { open: b
                             className="h-4 w-4"
                             checked={!!g.isActive}
                             onChange={async e=>{
-                              await setDoc(doc(db,'users',useAuth().user!.uid,'goals',g.id),{isActive:e.target.checked},{merge:true})
+                              if (!user) return
+                              await setDoc(doc(db,'users',user.uid,'goals',g.id),{isActive:e.target.checked},{merge:true})
                               setGoals(prev=>prev.map(x=>x.id===g.id?{...x,isActive:e.target.checked}:x))
                             }}
                           />
@@ -656,13 +726,14 @@ export default function GeneralJournalingModal({ open, onOpenChange }: { open: b
                     <div className="text-xs font-medium mb-1">Tasks</div>
                     <div className="max-h-40 overflow-auto rounded-md border p-2 grid gap-1">
                       {tasks.map(t=>(
-                        <label key={t.id} className="flex items-center gap-2 rounded px-2 py-1 hover:bg-muted cursor-pointer">
+                        <label key={t.id} className="flex items-center gap-2 rounded px-2 py-1 hover:bgMuted cursor-pointer">
                           <input
                             type="checkbox"
                             className="h-4 w-4"
                             checked={!!t.isActive}
                             onChange={async e=>{
-                              await setDoc(doc(db,'users',useAuth().user!.uid,'tasks',t.id),{isActive:e.target.checked},{merge:true})
+                              if (!user) return
+                              await setDoc(doc(db,'users',user.uid,'tasks',t.id),{isActive:e.target.checked},{merge:true})
                               setTasks(prev=>prev.map(x=>x.id===t.id?{...x,isActive:e.target.checked}:x))
                             }}
                           />
@@ -736,7 +807,7 @@ export default function GeneralJournalingModal({ open, onOpenChange }: { open: b
                             >
                               <option value="">Unassigned</option>
                               {[...activeAreaIds].map(id=>{
-                                const la = lifeAreas.find(x=>x.id===id); if(!la) return null
+                                const la = uniqueLifeAreas.find(x=>x.id===id); if(!la) return null
                                 return <option key={la.id} value={la.id}>{la.name}</option>
                               })}
                             </select>
@@ -750,7 +821,7 @@ export default function GeneralJournalingModal({ open, onOpenChange }: { open: b
                                 onChange={(e)=>setTomorrowSuggestions(prev=>prev.map(x=>x.id===s.id?{...x,activityTypeId:e.target.value||null}:x))}
                               >
                                 <option value="">(none)</option>
-                                {activityTypes.map(at=><option key={at.id} value={at.id}>{at.title}</option>)}
+                                {uniqueActivityTypes.map(at=><option key={at.id} value={at.id}>{at.title}</option>)}
                               </select>
                             </div>
                           )}
