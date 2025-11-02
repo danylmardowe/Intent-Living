@@ -6,11 +6,11 @@ import {
   addDoc,
   collection,
   onSnapshot,
-  query,
-  where,
   doc,
-  setDoc,
+  updateDoc,
+  deleteDoc,
 } from 'firebase/firestore'
+import Link from 'next/link'
 import { db } from '@/lib/firebase'
 import { useAuth } from '@/context/auth-context'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
@@ -50,14 +50,30 @@ export default function ActivitiesBankPage() {
     setNewTitle('')
   }
 
-  async function updateType(t: ActivityType, patch: Partial<ActivityType>) {
+  async function updateTypeTitle(t: ActivityType, title: string) {
     if (!user) return
     const ref = doc(db, 'users', user.uid, 'activityTypes', t.id)
-    await setDoc(ref, patch, { merge: true })
+    await updateDoc(ref, { title })
+  }
+
+  async function updateTypeDefaultArea(t: ActivityType, lifeAreaId: string | null) {
+    if (!user) return
+    const ref = doc(db, 'users', user.uid, 'activityTypes', t.id)
+    await updateDoc(ref, { defaultLifeAreaId: lifeAreaId })
+  }
+
+  async function deleteType(t: ActivityType) {
+    if (!user) return
+    const ok = window.confirm(
+      `Delete activity type "${t.title}"?\n\nNote: Activities linked to this type are NOT deleted here. Use the type detail page if you want to cascade delete.`
+    )
+    if (!ok) return
+    const ref = doc(db, 'users', user.uid, 'activityTypes', t.id)
+    await deleteDoc(ref)
   }
 
   return (
-    <div className="p-4 max-w-3xl mx-auto space-y-6">
+    <div className="p-4 max-w-4xl mx-auto space-y-6">
       <Card>
         <CardHeader>
           <CardTitle>Activities Bank</CardTitle>
@@ -72,20 +88,25 @@ export default function ActivitiesBankPage() {
             <Button onClick={addType}>Add</Button>
           </div>
 
-          <div className="space-y-3">
+          <div className="grid gap-3">
             {types.length === 0 ? (
               <div className="text-sm text-muted-foreground">No activity types yet.</div>
             ) : (
               types.map((t) => (
-                <div key={t.id} className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-center border rounded-md p-2">
+                <div
+                  key={t.id}
+                  className="grid grid-cols-1 sm:grid-cols-[1fr_240px_220px] gap-2 items-center border rounded-md p-3"
+                >
                   <Input
                     value={t.title}
-                    onChange={(e) => updateType(t, { title: e.target.value })}
+                    onChange={(e) => updateTypeTitle(t, e.target.value)}
                   />
                   <select
                     className="h-9 px-2 rounded-md border bg-background"
                     value={t.defaultLifeAreaId ?? ''}
-                    onChange={(e) => updateType(t, { defaultLifeAreaId: e.target.value || null })}
+                    onChange={(e) =>
+                      updateTypeDefaultArea(t, e.target.value ? e.target.value : null)
+                    }
                   >
                     <option value="">Unassigned</option>
                     {lifeAreas.map((la) => (
@@ -94,8 +115,18 @@ export default function ActivitiesBankPage() {
                       </option>
                     ))}
                   </select>
-                  <div className="text-xs text-muted-foreground">
-                    ID: <code>{t.id}</code>
+
+                  <div className="flex items-center gap-2">
+                    {/* This is the path the detail page will register */}
+                    <Link href={`/activities/types/${t.id}`} prefetch={false}>
+                      <Button variant="default">Open</Button>
+                    </Link>
+                    <Button variant="destructive" onClick={() => deleteType(t)}>
+                      Delete
+                    </Button>
+                    <div className="text-xs text-muted-foreground ml-auto">
+                      ID: <code>{t.id}</code>
+                    </div>
                   </div>
                 </div>
               ))

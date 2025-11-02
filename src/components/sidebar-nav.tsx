@@ -24,6 +24,7 @@ import {
   CalendarRange,
   CalendarCheck2,
   ChevronDown,
+  Activity, // ⟵ NEW icon for Activities
 } from 'lucide-react'
 
 /**
@@ -62,6 +63,14 @@ export default function SidebarNav() {
         icon={ListTodo}
         label="Tasks"
         active={isActive('/tasks')}
+      />
+
+      {/* NEW: Activities tab */}
+      <NavLink
+        href="/activities"
+        icon={Activity}
+        label="Activities"
+        active={isActive('/activities')}
       />
 
       <NavLink
