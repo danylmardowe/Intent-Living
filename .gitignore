@@ -1,8 +1,5 @@
 ﻿# Dependencies
 node_modules/
-pnpm-lock.yaml
-package-lock.json
-yarn.lock
 
 # Build / output
 .next/
@@ -18,13 +15,6 @@ coverage/
 .env.*
 !.env.example
 
-# OS / editors
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
-
-# Firebase / local emulators
-.firebaserc.local
-.firebase/
-storage_debug.log
+# Tooling artifacts
+.idx/
+.modified
