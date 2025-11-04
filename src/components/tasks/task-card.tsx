@@ -4,37 +4,33 @@
 import { useState } from 'react'
 import { doc, updateDoc, deleteDoc } from 'firebase/firestore'
 import { db, auth } from '@/lib/firebase'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Task, TaskStatus } from '@/lib/types'
+import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
-import { Slider } from '@/components/ui/slider'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog'
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from '@/components/ui/select'
+import { CalendarIcon, Trash2Icon } from 'lucide-react'
+import { format } from 'date-fns'
 import Subtasks from './subtasks'
-
-export type TaskStatus = 'backlog' | 'scheduled' | 'today' | 'in_progress' | 'blocked' | 'done' | 'archived'
-
-export type Task = {
-  id: string
-  title: string
-  description?: string
-  status?: TaskStatus
-  importance?: number
-  urgency?: number
-  lifeAreaId?: string | null
-  goalId?: string | null
-  dueAt?: any
-  startAt?: any
-  done?: boolean
-  blockedReason?: string
-  progress?: number // 0..100
-}
+import TaskForm from './task-form'
 
 const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
   { value: 'backlog', label: 'Backlog' },
   { value: 'scheduled', label: 'Scheduled' },
-  { value: 'today', label: 'Today' },
   { value: 'in_progress', label: 'In Progress' },
   { value: 'blocked', label: 'Blocked' },
   { value: 'done', label: 'Done' },
@@ -42,11 +38,12 @@ const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
 ]
 
 export default function TaskCard({ task }: { task: Task }) {
-  const [localImportance, setLocalImportance] = useState(task.importance ?? 50)
-  const [localUrgency, setLocalUrgency] = useState(task.urgency ?? 40)
-  const [localStatus, setLocalStatus] = useState<TaskStatus>(task.status ?? 'backlog')
-  const [localReason, setLocalReason] = useState(task.blockedReason ?? '')
-  const [manualProgress, setManualProgress] = useState<number>(task.progress ?? (task.done ? 100 : 0))
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [formData, setFormData] = useState<Partial<Task>>(task)
+
+  const handleFormChange = (fieldName: keyof Task, value: any) => {
+    setFormData(prev => ({ ...prev, [fieldName]: value }))
+  }
 
   async function safeUpdate(patch: Record<string, any>) {
     const uid = auth.currentUser?.uid
@@ -54,117 +51,120 @@ export default function TaskCard({ task }: { task: Task }) {
     await updateDoc(doc(db, 'users', uid, 'tasks', task.id), patch)
   }
 
+  async function handleSaveChanges() {
+    await safeUpdate(formData)
+    setIsDialogOpen(false)
+  }
+
   async function toggleDone() {
     const nextDone = !task.done
-    await safeUpdate({ done: nextDone, status: nextDone ? 'done' : 'backlog', progress: nextDone ? 100 : manualProgress })
+    await safeUpdate({
+      done: nextDone,
+      status: nextDone ? 'done' : 'backlog',
+      progress: nextDone ? 100 : task.progress > 0 ? task.progress : 0,
+    })
   }
-
+  
   async function changeStatus(next: TaskStatus) {
-    if (next === 'blocked' && !localReason.trim()) {
-      const r = prompt('Reason for blocking?') || ''
-      setLocalReason(r)
-      await safeUpdate({ status: next, blockedReason: r })
+    if (next === 'done') {
+      await safeUpdate({ status: 'done', done: true, progress: 100 })
     } else {
-      await safeUpdate({ status: next })
+      await safeUpdate({ status: next, done: false })
     }
-    setLocalStatus(next)
-  }
-
-  async function commitImportance() {
-    await safeUpdate({ importance: localImportance })
-  }
-  async function commitUrgency() {
-    await safeUpdate({ urgency: localUrgency })
-  }
-
-  async function commitManualProgress(next: number) {
-    setManualProgress(next)
-    await safeUpdate({ progress: next, done: next >= 100, status: next >= 100 ? 'done' : localStatus })
   }
 
   async function remove() {
-    const ok = confirm('Delete this task?')
+    const ok = confirm('Are you sure you want to delete this task?')
     if (!ok) return
     const uid = auth.currentUser?.uid
     if (!uid) return
     await deleteDoc(doc(db, 'users', uid, 'tasks', task.id))
+    setIsDialogOpen(false)
   }
 
+  const dueDate = task.dueAt?.toDate()
+  const isOverdue = dueDate && dueDate < new Date() && !task.done
+
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <Checkbox checked={!!task.done} onCheckedChange={toggleDone} />
-          <CardTitle className={task.done ? 'line-through text-muted-foreground' : ''}>
-            {task.title}
-          </CardTitle>
-        </div>
-        <div className="flex items-center gap-2">
-          <Select value={localStatus} onValueChange={(v)=>changeStatus(v as TaskStatus)}>
-            <SelectTrigger className="h-8 w-36"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {STATUS_OPTIONS.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Button variant="ghost" size="sm" onClick={remove}>Delete</Button>
-        </div>
-      </CardHeader>
+    <>
+      <Card
+        className="cursor-pointer transition-shadow duration-200 hover:shadow-md"
+        onClick={() => setIsDialogOpen(true)}
+      >
+        <CardContent className="p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div
+              className="flex min-w-0 flex-grow items-start gap-2"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleDone();
+              }}
+            >
+              <Checkbox
+                checked={!!task.done}
+                className="mt-1"
+              />
+              <span
+                className={`flex-grow cursor-pointer ${
+                  task.done ? 'text-muted-foreground line-through' : 'font-medium'
+                }`}
+              >
+                {task.title}
+              </span>
+            </div>
+            <Select value={task.status} onValueChange={changeStatus}>
+              <SelectTrigger className="h-7 w-[110px] shrink-0 text-xs focus:ring-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STATUS_OPTIONS.map((s) => (
+                  <SelectItem key={s.value} value={s.value}>
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-      {task.description ? (
-        <CardContent className="pt-0 pb-4">
-          <p className="text-sm text-muted-foreground">{task.description}</p>
+          {dueDate && (
+            <div
+              className={`mt-2 flex items-center gap-1.5 text-xs ${
+                isOverdue ? 'text-red-500' : 'text-muted-foreground'
+              }`}
+            >
+              <CalendarIcon className="h-3.5 w-3.5" />
+              <span>Due {format(dueDate, 'MMM d')}</span>
+            </div>
+          )}
         </CardContent>
-      ) : null}
+      </Card>
 
-      <CardContent className="grid gap-3">
-        {/* Importance / Urgency */}
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="flex items-center gap-2">
-            <Label className="text-sm text-muted-foreground">Importance</Label>
-            <Input
-              className="h-8 w-20"
-              type="number"
-              min={0}
-              max={100}
-              value={localImportance}
-              onChange={(e)=>setLocalImportance(Number(e.target.value))}
-              onBlur={commitImportance}
-            />
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit Task</DialogTitle>
+          </DialogHeader>
+          
+          <div className="max-h-[70vh] overflow-y-auto p-1 pr-4">
+            <TaskForm formData={formData} onFormChange={handleFormChange} />
+            <div className="mt-6 border-t pt-4">
+              <Subtasks taskId={task.id} currentProgress={task.progress} />
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Label className="text-sm text-muted-foreground">Urgency</Label>
-            <Input
-              className="h-8 w-20"
-              type="number"
-              min={0}
-              max={100}
-              value={localUrgency}
-              onChange={(e)=>setLocalUrgency(Number(e.target.value))}
-              onBlur={commitUrgency}
-            />
-          </div>
-        </div>
 
-        {/* Subtasks (auto) OR manual progress if no subtasks */}
-        <Subtasks
-          taskId={task.id}
-          currentProgress={task.progress ?? (task.done ? 100 : 0)}
-          onManualProgressCommit={commitManualProgress}
-        />
-
-        {localStatus === 'blocked' && (
-          <div className="flex items-center gap-2">
-            <Label className="text-sm text-muted-foreground">Reason</Label>
-            <Input
-              className="h-8"
-              placeholder="Why is this blocked?"
-              value={localReason}
-              onChange={(e)=>setLocalReason(e.target.value)}
-              onBlur={()=>safeUpdate({ blockedReason: localReason })}
-            />
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          <DialogFooter className="mt-4 flex w-full justify-between pt-4">
+            <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600" onClick={remove}>
+              <Trash2Icon className="mr-2 h-4 w-4" /> Delete Task
+            </Button>
+            <div>
+              <DialogClose asChild>
+                <Button variant="outline">Cancel</Button>
+              </DialogClose>
+              <Button onClick={handleSaveChanges} className="ml-2">Save Changes</Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }

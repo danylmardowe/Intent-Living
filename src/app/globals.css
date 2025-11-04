@@ -114,14 +114,8 @@
     box-shadow: var(--glass-shadow, 0 8px 30px rgba(0,0,0,0.06));
   }
 }
+
 /* ---- Sidebar rail hardening ---- */
-[data-sidebar-rail],
-.sidebar-rail {
-  width: 2px !important;
-  min-width: 2px !important;
-  max-width: 2px !important;
-}
-/* Ensure sidebar rail never grows */
 [data-sidebar-rail],
 .sidebar-rail {
   width: 2px !important;
@@ -135,4 +129,31 @@
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Radix overlays: prevent invisible/closed overlays from eating clicks.
+   This fixes "navbar not clickable when zoomed out" without changing
+   the app’s look & feel. Keep this at the very end for specificity.  */
+/* ------------------------------------------------------------------ */
+[data-radix-portal] [data-state='closed'] {
+  pointer-events: none !important;
+}
+
+[data-radix-portal] .fixed[data-state='closed'],
+[data-radix-portal] .DialogOverlay[data-state='closed'],
+[data-radix-portal] .SheetOverlay[data-state='closed'],
+[data-radix-portal] .PopoverOverlay[data-state='closed'],
+[data-radix-portal] .DrawerOverlay[data-state='closed'] {
+  pointer-events: none !important;
+}
+
+/* Visible/open overlays remain interactive */
+[data-radix-portal] [data-state='open'] {
+  pointer-events: auto;
+}
+
+/* Fallback: any hidden portal child shouldn't capture clicks */
+[data-radix-portal] [hidden] {
+  pointer-events: none !important;
 }

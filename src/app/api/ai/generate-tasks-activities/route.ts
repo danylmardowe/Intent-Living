@@ -1,19 +1,29 @@
-// src/app/api/ai/generate-tasks-activities/route.ts
-import { NextRequest, NextResponse } from 'next/server'
-import { generateTasksActivities } from '@/ai'
-import type { GenerateContext } from '@/ai/schemas'
+import { NextRequest, NextResponse } from 'next/server';
+import { generateTasksActivitiesFlow } from '@/ai/flows/generate-tasks-activities';
+import { GenerateContext } from '@/ai/schemas';
 
-export const runtime = 'nodejs'
+export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   try {
     const { input, context } = (await req.json()) as {
-      input: string
-      context?: GenerateContext
+      input: string;
+      context?: GenerateContext;
+    };
+
+    if (!input) {
+      return NextResponse.json({ error: 'Input text is required.' }, { status: 400 });
     }
-    const data = await generateTasksActivities(input, context)
-    return NextResponse.json(data)
+
+    // Call the Genkit flow directly
+    const data = await generateTasksActivitiesFlow({ input, context });
+    
+    return NextResponse.json(data);
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? 'Unknown error' }, { status: 400 })
+    console.error('[GENKIT_FLOW_ERROR]', e);
+    return NextResponse.json(
+      { error: e?.message || 'An unknown error occurred during generation.' },
+      { status: 500 }
+    );
   }
 }

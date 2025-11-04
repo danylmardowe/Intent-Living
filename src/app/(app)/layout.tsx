@@ -43,8 +43,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Mobile drawer (shares state with the sidebar) */}
       <MobileSidebar />
 
-      {/* Main content area */}
-      <SidebarInset>
+      {/* Main content area — ensure scrolling works on long pages */}
+      <SidebarInset className="min-h-svh sm:min-h-screen overflow-y-auto">
         <PageHeader />
         <div className="p-4">{children}</div>
       </SidebarInset>

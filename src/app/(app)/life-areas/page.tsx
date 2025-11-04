@@ -1,7 +1,7 @@
 // src/app/(app)/life-areas/page.tsx
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { auth, db } from '@/lib/firebase'
 import { useUserCollection } from '@/lib/useUserCollection'
@@ -26,6 +26,7 @@ type Area = {
   id: string
   name: string
   focus?: number
+  // parentId is deprecated/ignored now, kept only so older docs still type-check
   parentId?: string | null
   journalingCadence?: 'off' | 'daily' | 'weekly' | 'monthly' | 'custom'
   createdAt?: any
@@ -36,25 +37,11 @@ export default function LifeAreasPage() {
   const activeMode = useActiveMode()
   const activeIds = new Set(activeMode?.activeLifeAreaIds ?? [])
 
-  const childrenCount = useMemo(() => {
-    const counts: Record<string, number> = {}
-    areas.forEach(a => {
-      if (a.parentId) counts[a.parentId] = (counts[a.parentId] ?? 0) + 1
-    })
-    return counts
-  }, [areas])
-
-  // Create form state
+  // Create form state (Parent removed)
   const [name, setName] = useState('')
   const [focus, setFocus] = useState<number>(50)
-  const [parentId, setParentId] = useState<string | 'none'>('none')
   const [cadence, setCadence] = useState<Area['journalingCadence']>('off')
   const [busy, setBusy] = useState(false)
-
-  const parentOptions = useMemo(
-    () => areas.map(a => ({ id: a.id, name: a.name })),
-    [areas]
-  )
 
   async function addArea(e: React.FormEvent) {
     e.preventDefault()
@@ -67,13 +54,11 @@ export default function LifeAreasPage() {
       await addDoc(collection(db, 'users', uid, 'lifeAreas'), {
         name: trimmed,
         focus: clamp(focus, 0, 100),
-        parentId: parentId === 'none' ? null : parentId,
         journalingCadence: cadence ?? 'off',
         createdAt: serverTimestamp(),
       })
       setName('')
       setFocus(50)
-      setParentId('none')
       setCadence('off')
     } finally {
       setBusy(false)
@@ -102,12 +87,6 @@ export default function LifeAreasPage() {
     await updateDoc(doc(db, 'users', uid, 'lifeAreas', id), { journalingCadence: c ?? 'off' })
   }
 
-  async function setAreaParent(id: string, p: string | 'none') {
-    const uid = auth.currentUser?.uid
-    if (!uid) return
-    await updateDoc(doc(db, 'users', uid, 'lifeAreas', id), { parentId: p === 'none' ? null : p })
-  }
-
   async function removeArea(id: string) {
     const uid = auth.currentUser?.uid
     if (!uid) return
@@ -116,16 +95,24 @@ export default function LifeAreasPage() {
 
   return (
     <main className="space-y-6">
-      {/* Create */}
+      {/* Create (Parent field removed) */}
       <Card>
         <CardHeader>
           <CardTitle>Add Life Area</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={addArea} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 sm:items-end">
+          <form
+            onSubmit={addArea}
+            className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 sm:items-end"
+          >
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
-              <Input id="name" placeholder="e.g., Health" value={name} onChange={(e) => setName(e.target.value)} />
+              <Input
+                id="name"
+                placeholder="e.g., Health"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
             </div>
 
             <div className="space-y-2">
@@ -150,19 +137,6 @@ export default function LifeAreasPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Parent (optional)</Label>
-              <Select value={parentId} onValueChange={(v) => setParentId(v as any)}>
-                <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {parentOptions.map(p => (
-                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
               <Label>Journaling cadence</Label>
               <Select value={cadence} onValueChange={(v) => setCadence(v as any)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -177,18 +151,22 @@ export default function LifeAreasPage() {
             </div>
 
             <div>
-              <Button type="submit" disabled={busy || !name.trim()}>Add</Button>
+              <Button type="submit" disabled={busy || !name.trim()}>
+                Add
+              </Button>
             </div>
           </form>
         </CardContent>
       </Card>
 
-      {/* List */}
+      {/* List (Parent controls removed) */}
       {loading ? (
         <div className="p-4">Loading…</div>
       ) : areas.length === 0 ? (
         <Card className="p-6">
-          <p className="text-muted-foreground">No life areas yet. Add your first one above.</p>
+          <p className="text-muted-foreground">
+            No life areas yet. Add your first one above.
+          </p>
         </Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -198,7 +176,9 @@ export default function LifeAreasPage() {
                 <div className="flex items-center gap-2">
                   <CardTitle className="text-base">{a.name}</CardTitle>
                   {activeIds.has(a.id) && (
-                    <span className="text-xs rounded-full px-2 py-0.5 bg-brand-gradient text-white">Active</span>
+                    <span className="text-xs rounded-full px-2 py-0.5 bg-brand-gradient text-white">
+                      Active
+                    </span>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
@@ -209,8 +189,6 @@ export default function LifeAreasPage() {
                     variant="ghost"
                     size="sm"
                     onClick={() => removeArea(a.id)}
-                    title={childrenCount[a.id] ? 'Remove sub-areas first' : 'Delete'}
-                    disabled={!!childrenCount[a.id]}
                   >
                     Delete
                   </Button>
@@ -236,7 +214,10 @@ export default function LifeAreasPage() {
               {/* Cadence */}
               <div className="space-y-2">
                 <Label className="text-sm text-muted-foreground">Journaling cadence</Label>
-                <Select value={a.journalingCadence ?? 'off'} onValueChange={(v) => setAreaCadence(a.id, v as any)}>
+                <Select
+                  value={a.journalingCadence ?? 'off'}
+                  onValueChange={(v) => setAreaCadence(a.id, v as any)}
+                >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="off">Off</SelectItem>
@@ -244,23 +225,6 @@ export default function LifeAreasPage() {
                     <SelectItem value="weekly">Weekly</SelectItem>
                     <SelectItem value="monthly">Monthly</SelectItem>
                     <SelectItem value="custom" disabled>Custom (soon)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Parent */}
-              <div className="space-y-2">
-                <Label className="text-sm text-muted-foreground">Parent</Label>
-                <Select
-                  value={a.parentId ?? 'none'}
-                  onValueChange={(v) => setAreaParent(a.id, v as any)}
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    {parentOptions
-                      .filter(p => p.id !== a.id)
-                      .map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>

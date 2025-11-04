@@ -1,156 +1,139 @@
 // src/app/(app)/tasks/page.tsx
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { auth, db } from '@/lib/firebase'
 import { useUserCollection } from '@/lib/useUserCollection'
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import { Slider } from '@/components/ui/slider'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
+import { PlusCircle } from 'lucide-react'
 import KanbanBoard from '@/components/tasks/kanban-board'
 import EisenhowerMatrix from '@/components/tasks/eisenhower-matrix'
-import type { Task } from '@/components/tasks/task-card'
+import TaskForm from '@/components/tasks/task-form'
+import { Task } from '@/lib/types'
 
-type Area = { id: string; name: string }
-type Goal = { id: string; title: string }
+const INITIAL_FORM_DATA: Partial<Task> = {
+  title: '',
+  description: '',
+  lifeAreaId: null,
+  goalId: null,
+  startAt: null,
+  dueAt: null,
+  importance: 50,
+  urgency: 40,
+  status: 'backlog',
+  progress: 0,
+  done: false,
+}
+
+function TasksSkeleton() {
+  return (
+    <div className="flex gap-4 overflow-x-hidden">
+      {[...Array(4)].map((_, i) => (
+        <div key={i} className="w-72 shrink-0 space-y-3">
+          <Skeleton className="h-8 w-full" />
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-20 w-full" />
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export default function TasksPage() {
   const { data: tasks, loading } = useUserCollection<Task>('tasks', 'createdAt')
-  const { data: lifeAreas } = useUserCollection<Area>('lifeAreas', 'name')
-  const { data: goals } = useUserCollection<Goal>('goals', 'title')
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
+  const [formData, setFormData] = useState<Partial<Task>>(INITIAL_FORM_DATA)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Create form
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
-  const [lifeAreaId, setLifeAreaId] = useState<string | 'none'>('none')
-  const [goalId, setGoalId] = useState<string | 'none'>('none')
-  const [dueDate, setDueDate] = useState<string>('')      // yyyy-mm-dd
-  const [startDate, setStartDate] = useState<string>('')  // yyyy-mm-dd
-  const [importance, setImportance] = useState(50)
-  const [urgency, setUrgency] = useState(40)
-  const [busy, setBusy] = useState(false)
+  const handleFormChange = (fieldName: keyof Task, value: any) => {
+    setFormData(prev => ({ ...prev, [fieldName]: value }))
+  }
 
   async function addTask(e: React.FormEvent) {
     e.preventDefault()
     const uid = auth.currentUser?.uid
-    if (!uid) return
-    const t = title.trim()
-    const d = description.trim()
-    if (!t) return
-    setBusy(true)
+    if (!uid || !formData.title?.trim()) return
+
+    setIsSubmitting(true)
     try {
-      const payload: any = {
-        title: t,
-        status: 'backlog', // backlog | scheduled | today | in_progress | blocked | done | archived
-        importance,
-        urgency,
-        lifeAreaId: lifeAreaId === 'none' ? null : lifeAreaId,
-        goalId: goalId === 'none' ? null : goalId,
-        done: false,
-        progress: 0,
+      await addDoc(collection(db, 'users', uid, 'tasks'), {
+        ...formData,
         createdAt: serverTimestamp(),
-        ...(d && { description: d }),
-        ...(startDate && { startAt: new Date(startDate) }),
-        ...(dueDate && { dueAt: new Date(dueDate) }),
-      }
-      await addDoc(collection(db, 'users', uid, 'tasks'), payload)
-      // reset
-      setTitle(''); setDescription(''); setLifeAreaId('none'); setGoalId('none')
-      setDueDate(''); setStartDate(''); setImportance(50); setUrgency(40)
+      })
+      setFormData(INITIAL_FORM_DATA) // Reset form
+      setIsCreateDialogOpen(false)
+    } catch (error) {
+      console.error("Error adding task:", error)
+      // Consider adding a user-facing error message (toast)
     } finally {
-      setBusy(false)
+      setIsSubmitting(false)
     }
   }
 
-  const areaOptions = useMemo(() => lifeAreas.map(a => ({ id: a.id, name: a.name })), [lifeAreas])
-  const goalOptions = useMemo(() => goals.map(g => ({ id: g.id, title: g.title })), [goals])
-
   return (
-    <main className="space-y-6">
-      {/* Create Task */}
-      <Card>
-        <CardHeader><CardTitle>Create Task</CardTitle></CardHeader>
-        <CardContent>
-          <form onSubmit={addTask} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 sm:items-end">
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="t-title">Title</Label>
-              <Input id="t-title" value={title} onChange={(e)=>setTitle(e.target.value)} placeholder="e.g., Plan weekly workout schedule" />
-            </div>
-            <div className="space-y-2 sm:col-span-3">
-              <Label>Description</Label>
-              <Textarea value={description} onChange={(e)=>setDescription(e.target.value)} rows={3} />
-            </div>
+    <main className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Tasks</h1>
+        <Button onClick={() => setIsCreateDialogOpen(true)}>
+          <PlusCircle className="mr-2 h-4 w-4" />
+          New Task
+        </Button>
+      </div>
 
-            <div className="space-y-2">
-              <Label>Life Area</Label>
-              <Select value={lifeAreaId} onValueChange={(v)=>setLifeAreaId(v as any)}>
-                <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {areaOptions.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
+      <Tabs defaultValue="kanban">
+        <TabsList>
+          <TabsTrigger value="kanban">Kanban</TabsTrigger>
+          <TabsTrigger value="matrix">Matrix</TabsTrigger>
+        </TabsList>
+        {loading ? (
+          <div className="mt-4">
+            <TasksSkeleton />
+          </div>
+        ) : (
+          <>
+            <TabsContent value="kanban" className="mt-4">
+              <KanbanBoard tasks={tasks} />
+            </TabsContent>
+            <TabsContent value="matrix" className="mt-4">
+              <EisenhowerMatrix tasks={tasks} />
+            </TabsContent>
+          </>
+        )}
+      </Tabs>
 
-            <div className="space-y-2">
-              <Label>Goal</Label>
-              <Select value={goalId} onValueChange={(v)=>setGoalId(v as any)}>
-                <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {goalOptions.map(g => <SelectItem key={g.id} value={g.id}>{g.title}</SelectItem>)}
-                </SelectContent>
-              </Select>
+      {/* Create Task Dialog */}
+      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Create a New Task</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={addTask}>
+            <div className="max-h-[70vh] overflow-y-auto pr-2">
+              <TaskForm formData={formData} onFormChange={handleFormChange} />
             </div>
-
-            <div className="space-y-2">
-              <Label>Start date</Label>
-              <Input type="date" value={startDate} onChange={(e)=>setStartDate(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Due date</Label>
-              <Input type="date" value={dueDate} onChange={(e)=>setDueDate(e.target.value)} />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Importance: {importance}</Label>
-              <Slider value={[importance]} min={0} max={100} step={1} onValueChange={(v)=>setImportance(v[0] ?? 0)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Urgency: {urgency}</Label>
-              <Slider value={[urgency]} min={0} max={100} step={1} onValueChange={(v)=>setUrgency(v[0] ?? 0)} />
-            </div>
-
-            <div>
-              <Button type="submit" disabled={busy || !title.trim()}>Add</Button>
-            </div>
+            <DialogFooter className="mt-4">
+              <DialogClose asChild>
+                <Button type="button" variant="outline">Cancel</Button>
+              </DialogClose>
+              <Button type="submit" disabled={isSubmitting || !formData.title?.trim()}>
+                {isSubmitting ? 'Creating...' : 'Create Task'}
+              </Button>
+            </DialogFooter>
           </form>
-        </CardContent>
-      </Card>
-
-      {/* Views */}
-      {loading ? (
-        <div className="p-4">Loading…</div>
-      ) : (
-        <Tabs defaultValue="kanban">
-          <TabsList>
-            <TabsTrigger value="kanban">Kanban</TabsTrigger>
-            <TabsTrigger value="matrix">Eisenhower Matrix</TabsTrigger>
-          </TabsList>
-          <TabsContent value="kanban" className="mt-4">
-            <KanbanBoard tasks={tasks} />
-          </TabsContent>
-          <TabsContent value="matrix" className="mt-4">
-            <EisenhowerMatrix tasks={tasks} />
-          </TabsContent>
-        </Tabs>
-      )}
+        </DialogContent>
+      </Dialog>
     </main>
   )
 }
