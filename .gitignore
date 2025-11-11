@@ -1,0 +1,27 @@
+﻿# dependencies
+node_modules/
+.next/
+out/
+dist/
+
+# build artifacts
+*.tsbuildinfo
+*.log
+
+# environment files (never commit secrets)
+.env
+.env.local
+.env.*.local
+*.env
+
+# Firebase emulator & debug
+firebase-debug.log
+firebase-debug.*
+
+# private credentials or JSON keys
+*.json
+!firebase.json
+
+# misc
+.DS_Store
+Thumbs.db

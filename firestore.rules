@@ -1,0 +1,27 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Root-level user documents
+    match /users/{userId} {
+      // ✅ Allow the authenticated user to read and write their own profile
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      // 🧩 Subcollections (reflections, activities, modes, areas)
+      match /{subcollection}/{docId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+
+        // Optional: restrict updates for orchestrator-managed reflections
+        allow update: if request.auth != null
+                      && request.auth.uid == userId
+                      && request.resource.data.diff(resource.data).keys().hasAll(["summary", "insights", "suggested_actions"]) == false;
+      }
+    }
+
+    // 🚫 Block all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
